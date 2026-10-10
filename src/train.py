@@ -10,6 +10,8 @@ import argparse
 from tqdm import tqdm
 import torch_directml
 import matplotlib.pyplot as plt
+import time
+import pandas as pd
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, default="Resnet-50")
@@ -26,7 +28,8 @@ parser.add_argument("--batch_size", type=int, default=4)
 parser.add_argument("--learning_rate", type=float, default=0.001)
 parser.add_argument("--criterion", type=str, default="CrossEntropyLoss")
 parser.add_argument("--optimizer", type=str, default="Adam")
-
+parser.add_argument("--save_model", type=bool, default=True)
+parser.add_argument("--save_path", type=str, default=os.path.join(r"..\saved_models",parser.parse_args().model_name,str(int(time.time()))))
 args = parser.parse_args()
 class trainer:
     def __init__(self,args):
@@ -70,7 +73,6 @@ class trainer:
         else:
             raise ValueError("Wrong criterion name")
 
-  
     def train_one_epoch(self):
         self.model.train()
         epoch_loss=0.0
@@ -172,6 +174,8 @@ class trainer:
                 validation_losses.append(val_loss)
                 validation_Top1_accuracies.append(val_Top1_acc)
                 validation_Top5_accuracies.append(val_Top5_acc)
+            if self.args.save_model:
+                self.save_model(epoch+1)
         return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies
 
     def run_test(self):
@@ -182,26 +186,32 @@ class trainer:
         return test_loss,test_Top1_acc,test_Top5_acc
 
     def draw_loss_acc_curve(self,training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses=None,validation_Top1_accuracies=None,validation_Top5_accuracies=None):
-       epochs=range(1,self.args.num_epochs+1)
-       plt.plot(epochs,training_losses,label="Training Loss")
-       if validation_losses is not None:
-           plt.plot(epochs,validation_losses,label="Validation Loss")
-       plt.title("Loss Curve")
-       plt.xlabel("Epochs")
-       plt.ylabel("Loss")
-       plt.legend()
-       plt.show()
-       plt.plot(epochs,training_Top1_accuracies,label="Training Top-1 Accuracy")
-       plt.plot(epochs,training_Top5_accuracies,label="Training Top-5 Accuracy")
-       if validation_Top1_accuracies is not None:
-           plt.plot(epochs,validation_Top1_accuracies,label="Validation Top-1 Accuracy")
-       if validation_Top5_accuracies is not None:
-           plt.plot(epochs,validation_Top5_accuracies,label="Validation Top-5 Accuracy")
-       plt.title("Accuracy Curve")
-       plt.xlabel("Epochs")
-       plt.ylabel("Accuracy (%)")
-       plt.legend()
-       plt.show()
+        epochs=range(1,self.args.num_epochs+1)
+        plt.figure()
+        plt.plot(epochs,training_losses,label="Training Loss")
+        if validation_losses is not None:
+            plt.plot(epochs,validation_losses,label="Validation Loss")
+        plt.title("Loss Curve")
+        plt.xlabel("Epochs")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.show()
+        os.makedirs(os.path.join(self.args.save_path,"curves"), exist_ok=True)
+        plt.savefig(os.path.join(self.args.save_path,"curves", "loss_curve.png"))
+        plt.figure()
+        plt.plot(epochs,training_Top1_accuracies,label="Training Top-1 Accuracy")
+        plt.plot(epochs,training_Top5_accuracies,label="Training Top-5 Accuracy")
+        if validation_Top1_accuracies is not None:
+            plt.plot(epochs,validation_Top1_accuracies,label="Validation Top-1 Accuracy")
+        if validation_Top5_accuracies is not None:
+            plt.plot(epochs,validation_Top5_accuracies,label="Validation Top-5 Accuracy")
+        plt.title("Accuracy Curve")
+        plt.xlabel("Epochs")
+        plt.ylabel("Accuracy (%)")
+        plt.legend()
+        plt.show()
+        os.makedirs(os.path.join(self.args.save_path,"curves"), exist_ok=True)
+        plt.savefig(os.path.join(self.args.save_path,"curves", "accuracy_curve.png"))
 
     def run(self):
         training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies=self.run_train()
@@ -214,7 +224,11 @@ class trainer:
                                  validation_Top5_accuracies=validation_Top5_accuracies)
         return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,test_loss,test_Top1_acc,test_Top5_acc
 
-    
+
+    def save_model(self,epoch):
+        os.makedirs(os.path.join(self.args.save_path, "models"), exist_ok=True)
+        save_path=os.path.join(self.args.save_path,"models" ,f"model_epoch_{epoch}.pth")
+        torch.save(self.model.state_dict(), save_path)
 
 if __name__=="__main__":
     trainer_instance=trainer(args)
