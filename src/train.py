@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import time
 import pandas as pd
 from thop import profile
+import gc
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, default="Resnet-50")
@@ -41,6 +42,26 @@ class trainer:
         self.optimizer_init()
         self.dataset_init()
     
+    def switch_model(self,new_model_name):
+        if self.device is "dml":
+            del self.model
+            gc.collect()
+            torch_directml.empty_cache()
+        self.args.model_name=new_model_name
+        self.model_init()
+
+    def switch_criterion(self, new_criterion):
+        self.args.criterion = new_criterion
+        self.criterion_init()
+
+    def switch_device(self, new_device):
+        if self.device is "dml":
+            del self.model
+            gc.collect()
+            torch_directml.empty_cache()
+        self.args.device = new_device
+        self.device_init()
+        self.model.to(self.device)
     
     def dataset_init(self):
         if self.args.use_train_csv:
@@ -64,6 +85,8 @@ class trainer:
             if not torch_directml.is_available():
                 raise ValueError("DirectML is not available.")
             self.device = torch_directml.device()
+        if self.args.device == "cpu":
+            self.device = torch.device("cpu")
         
     def model_init(self):
         self.model = get_model(self.args.model_name)
@@ -219,6 +242,10 @@ class trainer:
 
     def run(self):
         training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies=self.run_train()
+        best_val_epoch=None
+        if validation_losses is not None:
+            best_val_epoch=validation_losses.index(min(validation_losses))+1
+            self.load_model(os.path.join(self.args.save_path,"models",f"model_epoch_{best_val_epoch}.pth"))
         test_loss,test_Top1_acc,test_Top5_acc=self.run_test()
         self.draw_loss_acc_curve(training_losses=training_losses,
                                  training_Top1_accuracies=training_Top1_accuracies,
@@ -226,6 +253,15 @@ class trainer:
                                  validation_losses=validation_losses,
                                  validation_Top1_accuracies=validation_Top1_accuracies,
                                  validation_Top5_accuracies=validation_Top5_accuracies)
+        latency=self.latency_test()
+        flops,params=self.get_model_parameters_and_flops()
+        txt_file_path=os.path.join(self.args.save_path,"results.txt")
+        with open(txt_file_path,"w") as f:
+            f.write(f"Average Latency: {latency:.6f} seconds\n")
+            f.write(f"FLOPs = {flops/1000**3:.4f} G\n")
+            f.write(f"Params = {params/1000**2:.4f} M\n")
+            f.write(f"Best Validation Epoch: {best_val_epoch}\n")
+            f.write(f"Test Loss: {test_loss:.4f}, Top-1 Accuracy: {test_Top1_acc:.2f}%, Top-5 Accuracy: {test_Top5_acc:.2f}%\n")
         return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,test_loss,test_Top1_acc,test_Top5_acc
 
 
@@ -234,6 +270,9 @@ class trainer:
         save_path=os.path.join(self.args.save_path,"models" ,f"model_epoch_{epoch}.pth")
         torch.save(self.model.state_dict(), save_path)
 
+    def load_model(self,model_path):
+        self.model.load_state_dict(torch.load(model_path, map_location="cpu"))
+        self.model.to(self.device)
 
     def get_model_parameters_and_flops(self):
         flops, params = profile(self.model, inputs=(1, 3, 224,224))
@@ -245,6 +284,7 @@ class trainer:
         self.model.eval()
         with torch.no_grad():
             latency=0.0
+
             for _ in range(warming_up_iterations):
                 input_tensor = torch.randn(1, 3, 224, 224).to(self.device)
                 _ = self.model(input_tensor)
@@ -257,7 +297,8 @@ class trainer:
                 end_time = time.time()
                 iterations_latency = end_time - start_time
                 latency += iterations_latency
-            average_latency = latency / num_iterations
+
+        average_latency = latency / num_iterations
         return average_latency
                 
 

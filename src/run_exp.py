@@ -21,3 +21,7 @@ args={
 }
 trainer = Trainer(args)
 trainer.run()
+trainer.switch_model("MobileNetV3-Large")
+trainer.run()
+trainer.switch_model("ConvNeXt-Tiny")
+trainer.run()
