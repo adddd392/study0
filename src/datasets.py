@@ -23,6 +23,9 @@ class Mini_ImageNet_Datasets(Dataset):
         image=ToTensorV2()(image=image)['image']
         
         label=row['label']
+        label_classes=self.df['label'].unique()
+        label_to_index={label:i for i,label in enumerate(label_classes)}
+        label=label_to_index[label]
         return image,label
 
     def __len__(self):

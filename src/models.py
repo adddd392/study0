@@ -11,7 +11,7 @@ def get_model(model_name):
         return models.mobilenet_v3_large()
     if model_name=="ConvNeXt-Tiny":
         return models.convnext_tiny()
-    raise("Wrong model_name")
+    raise ValueError("Wrong model_name")
 
 
 if __name__=="__main__":
