@@ -267,6 +267,7 @@ class trainer:
             f.write(f"Best Validation Epoch: {best_val_epoch}\n")
             f.write(f"Best Validation Loss: {best_val_loss:.4f}\n")
             f.write(f"Test Loss: {test_loss:.4f}, Top-1 Accuracy: {test_Top1_acc:.2f}%, Top-5 Accuracy: {test_Top5_acc:.2f}%\n")
+            f.write(f"self.args\n")
         return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,test_loss,test_Top1_acc,test_Top5_acc
 
 
