@@ -32,6 +32,7 @@ parser.add_argument("--criterion", type=str, default="CrossEntropyLoss")
 parser.add_argument("--optimizer", type=str, default="Adam")
 parser.add_argument("--save_model", type=bool, default=True)
 parser.add_argument("--save_path", type=str, default=os.path.join(r"..\saved_models",parser.parse_args().model_name,str(int(time.time()))))
+parser.add_argument("--input_size", type=tuple, default=(224.224))
 args = parser.parse_args()
 class trainer:
     def __init__(self,args):
@@ -51,7 +52,7 @@ class trainer:
         self.args.save_path=os.path.join(r"..\saved_models",parser.parse_args().model_name,str(int(time.time())))
         self.model_init()
 
-
+    
     def switch_criterion(self, new_criterion):
         self.args.criterion = new_criterion
         self.criterion_init()
@@ -67,14 +68,26 @@ class trainer:
     
     def dataset_init(self):
         if self.args.use_train_csv:
-            self.train_dataset = Mini_ImageNet_Datasets(csv_file=self.args.train_csv, data_root=os.path.join(self.args.data_root, "train"))
-            self.train_loader = DataLoader(self.train_dataset, batch_size=self.args.batch_size, shuffle=True)
+            self.train_dataset = Mini_ImageNet_Datasets(csv_file=self.args.train_csv, 
+                                                        data_root=os.path.join(self.args.data_root,
+                                                        inputsize=self.args.inputsize))
+            self.train_loader = DataLoader(self.train_dataset, 
+                                           batch_size=self.args.batch_size, 
+                                           shuffle=True)
         if self.args.use_val_csv:
-            self.val_dataset = Mini_ImageNet_Datasets(csv_file=self.args.val_csv, data_root=os.path.join(self.args.data_root, "val"))
-            self.val_loader = DataLoader(self.val_dataset, batch_size=self.args.batch_size, shuffle=False)
+            self.val_dataset = Mini_ImageNet_Datasets(csv_file=self.args.val_csv, 
+                                                      data_root=os.path.join(self.args.data_root, 
+                                                      inputsize=self.args.inputsize))
+            self.val_loader = DataLoader(self.val_dataset, 
+                                         batch_size=self.args.batch_size, 
+                                         shuffle=False)
         if self.args.use_test_csv:
-            self.test_dataset = Mini_ImageNet_Datasets(csv_file=self.args.test_csv, data_root=os.path.join(self.args.data_root, "test"))
-            self.test_loader = DataLoader(self.test_dataset, batch_size=self.args.batch_size, shuffle=False)
+            self.test_dataset = Mini_ImageNet_Datasets(csv_file=self.args.test_csv, 
+                                                       data_root=os.path.join(self.args.data_root, 
+                                                       inputsize=self.args.inputsize))
+            self.test_loader = DataLoader(self.test_dataset, 
+                                          batch_size=self.args.batch_size, 
+                                          shuffle=False)
 
     def optimizer_init(self):
         if self.args.optimizer == "Adam":
