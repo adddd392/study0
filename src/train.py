@@ -184,6 +184,8 @@ class trainer:
         if not self.args.use_train_csv:
             print("Train CSV not provided.")
             return None,None,None,None
+        best_val_loss=float('inf')
+        best_val_epoch=None
         training_losses=[]
         training_Top1_accuracies=[]
         training_Top5_accuracies=[]
@@ -201,9 +203,11 @@ class trainer:
                 validation_losses.append(val_loss)
                 validation_Top1_accuracies.append(val_Top1_acc)
                 validation_Top5_accuracies.append(val_Top5_acc)
-            if self.args.save_model:
+            if self.args.save_model and self.args.use_val_csv and val_loss<best_val_loss:
+                best_val_loss=val_loss
+                best_val_epoch=epoch+1
                 self.save_model(epoch+1)
-        return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies
+        return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,best_val_epoch,best_val_loss
 
     def run_test(self):
         if not self.args.use_test_csv:
@@ -241,8 +245,7 @@ class trainer:
         plt.savefig(os.path.join(self.args.save_path,"curves", "accuracy_curve.png"))
 
     def run(self):
-        training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies=self.run_train()
-        best_val_epoch=None
+        training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,best_val_epoch,best_val_loss=self.run_train()
         if validation_losses is not None:
             best_val_epoch=validation_losses.index(min(validation_losses))+1
             self.load_model(os.path.join(self.args.save_path,"models",f"model_epoch_{best_val_epoch}.pth"))
@@ -261,6 +264,7 @@ class trainer:
             f.write(f"FLOPs = {flops/1000**3:.4f} G\n")
             f.write(f"Params = {params/1000**2:.4f} M\n")
             f.write(f"Best Validation Epoch: {best_val_epoch}\n")
+            f.write(f"Best Validation Loss: {best_val_loss:.4f}\n")
             f.write(f"Test Loss: {test_loss:.4f}, Top-1 Accuracy: {test_Top1_acc:.2f}%, Top-5 Accuracy: {test_Top5_acc:.2f}%\n")
         return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,test_loss,test_Top1_acc,test_Top5_acc
 
