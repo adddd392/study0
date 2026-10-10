@@ -256,11 +256,12 @@ class trainer:
                                  validation_losses=validation_losses,
                                  validation_Top1_accuracies=validation_Top1_accuracies,
                                  validation_Top5_accuracies=validation_Top5_accuracies)
-        latency=self.latency_test()
+       
         flops,params=self.get_model_parameters_and_flops()
         txt_file_path=os.path.join(self.args.save_path,"results.txt")
+        os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
         with open(txt_file_path,"w") as f:
-            f.write(f"Average Latency: {latency:.6f} seconds\n")
+            
             f.write(f"FLOPs = {flops/1000**3:.4f} G\n")
             f.write(f"Params = {params/1000**2:.4f} M\n")
             f.write(f"Best Validation Epoch: {best_val_epoch}\n")
@@ -303,6 +304,10 @@ class trainer:
                 latency += iterations_latency
 
         average_latency = latency / num_iterations
+        txt_file_path = os.path.join(self.args.save_path, "..","latency_results.txt")
+        os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
+        with open(txt_file_path, "w") as f:
+            f.write(f"Average Latency: {latency:.6f} seconds\n")
         return average_latency
                 
 
