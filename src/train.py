@@ -12,6 +12,7 @@ import torch_directml
 import matplotlib.pyplot as plt
 import time
 import pandas as pd
+from thop import profile
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, default="Resnet-50")
@@ -234,6 +235,28 @@ class trainer:
         torch.save(self.model.state_dict(), save_path)
 
 
+    def get_model_parameters_and_flops(self):
+        flops, params = profile(self.model, inputs=(1, 3, 224,224))
+        #print('FLOPs = ' + str(flops/1000**3) + 'G')
+        #print('Params = ' + str(params/1000**2) + 'M')
+        return  flops,params
+
+    def latency_test(self,warming_up_iterations=10,num_iterations=100):
+        self.model.eval()
+        with torch.no_grad():
+            
+            for _ in range(warming_up_iterations):
+                input_tensor = torch.randn(1, 3, 224, 224).to(self.device)
+                _ = self.model(input_tensor)
+
+           
+            for _ in range(num_iterations):
+                input_tensor = torch.randn(1, 3, 224, 224).to(self.device)
+                start_time = time.time()
+                _ = self.model(input_tensor)
+                end_time = time.time()
+                latency = end_time - start_time
+                print(f"Iteration {_+1}: Latency: {latency:.6f} seconds")
 
 if __name__=="__main__":
     trainer_instance=trainer(args)
