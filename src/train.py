@@ -102,7 +102,8 @@ class trainer:
     def validate(self):
         self.model.eval()
         val_loss=0.0
-        correct=0
+        Top1_correct=0
+        Top5_correct=0
         total=0
         with torch.no_grad():
             for images,labels in tqdm(self.val_loader):
@@ -111,18 +112,24 @@ class trainer:
                 outputs=self.model(images)
                 loss=self.criterion(outputs,labels)
                 val_loss+=loss.item()*images.size(0)
-                _,predicted=torch.max(outputs,1)
+                _,Top1_predicted=torch.max(outputs,1)
                 total+=labels.size(0)
-                correct+=(predicted==labels).sum().item()
-        val_acc=100.*correct/total
+                Top1_correct+=(Top1_predicted==labels).sum().item()
+                
+                _,Top5_predicted=torch.topk(outputs,5,dim=1)
+                Top5_correct+=(Top5_predicted.eq(labels.view(-1,1))).sum().item()
+        val_Top1_acc=100.*Top1_correct/total
+        val_Top5_acc=100.*Top5_correct/total
         val_loss/=total
-        print(f"Validation Loss: {val_loss:.4f}, Accuracy: {val_acc:.2f}%")
-        return val_loss,val_acc
+        print(f"Validation Loss: {val_loss:.4f}, Top-1 Accuracy: {val_Top1_acc:.2f}%")
+        print(f"Top-5 Accuracy: {val_Top5_acc:.2f}%")
+        return val_loss,val_Top1_acc,val_Top5_acc
 
     def test(self):
         self.model.eval()
         test_loss=0.0
-        correct=0
+        Top1_correct=0
+        Top5_correct=0
         total=0
         with torch.no_grad():
             for images,labels in tqdm(self.test_loader):
@@ -131,13 +138,18 @@ class trainer:
                 outputs=self.model(images)
                 loss=self.criterion(outputs,labels)
                 test_loss+=loss.item()*images.size(0)
-                _,predicted=torch.max(outputs,1)
+                _,Top1_predicted=torch.max(outputs,1)
                 total+=labels.size(0)
-                correct+=(predicted==labels).sum().item()
-        test_acc=100.*correct/total
+                Top1_correct+=(Top1_predicted==labels).sum().item()
+                
+                _,Top5_predicted=torch.topk(outputs,5,dim=1)
+                Top5_correct+=(Top5_predicted.eq(labels.view(-1,1))).sum().item()
+        test_Top1_acc=100.*Top1_correct/total
+        test_Top5_acc=100.*Top5_correct/total
         test_loss/=total
-        print(f"Test Loss: {test_loss:.4f}, Accuracy: {test_acc:.2f}%")
-        return test_loss,test_acc
+        print(f"Test Loss: {test_loss:.4f}, Top-1 Accuracy: {test_Top1_acc:.2f}%")
+        print(f"Top-5 Accuracy: {test_Top5_acc:.2f}%")
+        return test_loss,test_Top1_acc,test_Top5_acc
 
     def run_train(self):
         if not self.args.use_train_csv:
@@ -147,7 +159,8 @@ class trainer:
         training_Top1_accuracies=[]
         training_Top5_accuracies=[]
         validation_losses=[]
-        validation_accuracies=[]
+        validation_Top1_accuracies=[]
+        validation_Top5_accuracies=[]
         for epoch in range(self.args.num_epochs):
             print(f"Epoch{epoch+1}/{self.args.num_epochs}")
             train_loss,train_Top1_acc,train_Top5_acc=self.train_one_epoch()
@@ -155,19 +168,20 @@ class trainer:
             training_Top1_accuracies.append(train_Top1_acc)
             training_Top5_accuracies.append(train_Top5_acc)
             if self.args.use_val_csv:
-                val_loss,val_acc=self.validate()
+                val_loss,val_Top1_acc,val_Top5_acc=self.validate()
                 validation_losses.append(val_loss)
-                validation_accuracies.append(val_acc)
-        return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_accuracies
+                validation_Top1_accuracies.append(val_Top1_acc)
+                validation_Top5_accuracies.append(val_Top5_acc)
+        return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies
 
     def run_test(self):
         if not self.args.use_test_csv:
             print("Test CSV not provided.")
-            return None,None
-        test_loss,test_acc=self.test()
-        return test_loss,test_acc
+            return None,None,None
+        test_loss,test_Top1_acc,test_Top5_acc=self.test()
+        return test_loss,test_Top1_acc,test_Top5_acc
 
-    def draw_loss_acc_curve(self,training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses=None,validation_accuracies=None):
+    def draw_loss_acc_curve(self,training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses=None,validation_Top1_accuracies=None,validation_Top5_accuracies=None):
        epochs=range(1,self.args.num_epochs+1)
        plt.plot(epochs,training_losses,label="Training Loss")
        if validation_losses is not None:
@@ -179,8 +193,10 @@ class trainer:
        plt.show()
        plt.plot(epochs,training_Top1_accuracies,label="Training Top-1 Accuracy")
        plt.plot(epochs,training_Top5_accuracies,label="Training Top-5 Accuracy")
-       if validation_accuracies is not None:
-           plt.plot(epochs,validation_accuracies,label="Validation Accuracy")
+       if validation_Top1_accuracies is not None:
+           plt.plot(epochs,validation_Top1_accuracies,label="Validation Top-1 Accuracy")
+       if validation_Top5_accuracies is not None:
+           plt.plot(epochs,validation_Top5_accuracies,label="Validation Top-5 Accuracy")
        plt.title("Accuracy Curve")
        plt.xlabel("Epochs")
        plt.ylabel("Accuracy (%)")
@@ -188,14 +204,15 @@ class trainer:
        plt.show()
 
     def run(self):
-        training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_accuracies=self.run_train()
-        test_loss,test_acc=self.run_test()
+        training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies=self.run_train()
+        test_loss,test_Top1_acc,test_Top5_acc=self.run_test()
         self.draw_loss_acc_curve(training_losses=training_losses,
                                  training_Top1_accuracies=training_Top1_accuracies,
                                  training_Top5_accuracies=training_Top5_accuracies,
                                  validation_losses=validation_losses,
-                                 validation_accuracies=validation_accuracies)
-        return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_accuracies,test_loss,test_acc
+                                 validation_Top1_accuracies=validation_Top1_accuracies,
+                                 validation_Top5_accuracies=validation_Top5_accuracies)
+        return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,test_loss,test_Top1_acc,test_Top5_acc
 
     
 
