@@ -48,7 +48,9 @@ class trainer:
             gc.collect()
             torch_directml.empty_cache()
         self.args.model_name=new_model_name
+        self.args.save_path=os.path.join(r"..\saved_models",parser.parse_args().model_name,str(int(time.time())))
         self.model_init()
+
 
     def switch_criterion(self, new_criterion):
         self.args.criterion = new_criterion
@@ -257,13 +259,12 @@ class trainer:
                                  validation_Top1_accuracies=validation_Top1_accuracies,
                                  validation_Top5_accuracies=validation_Top5_accuracies)
        
-        flops,params=self.get_model_parameters_and_flops()
+        
         txt_file_path=os.path.join(self.args.save_path,"results.txt")
         os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
         with open(txt_file_path,"w") as f:
             
-            f.write(f"FLOPs = {flops/1000**3:.4f} G\n")
-            f.write(f"Params = {params/1000**2:.4f} M\n")
+            
             f.write(f"Best Validation Epoch: {best_val_epoch}\n")
             f.write(f"Best Validation Loss: {best_val_loss:.4f}\n")
             f.write(f"Test Loss: {test_loss:.4f}, Top-1 Accuracy: {test_Top1_acc:.2f}%, Top-5 Accuracy: {test_Top5_acc:.2f}%\n")
@@ -280,10 +281,15 @@ class trainer:
         self.model.load_state_dict(torch.load(model_path, map_location="cpu"))
         self.model.to(self.device)
 
-    def get_model_parameters_and_flops(self):
+    def get_model_flops_and_parameters(self):
         flops, params = profile(self.model, inputs=(1, 3, 224,224))
         #print('FLOPs = ' + str(flops/1000**3) + 'G')
         #print('Params = ' + str(params/1000**2) + 'M')
+        txt_file_path = os.path.join(self.args.save_path, "..","flops_and_parameters.txt")
+        os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
+        with open(txt_file_path, "w") as f:
+            f.write(f"FLOPs = {flops/1000**3:.4f} G\n")
+            f.write(f"Params = {params/1000**2:.4f} M\n")
         return  flops,params
 
     def latency_test(self,warming_up_iterations=10,num_iterations=100):
@@ -305,12 +311,13 @@ class trainer:
                 latency += iterations_latency
 
         average_latency = latency / num_iterations
-        txt_file_path = os.path.join(self.args.save_path, "..","latency_results.txt")
+        txt_file_path = os.path.join(self.args.save_path, "..",str(self.args.device)+"_latency.txt")
         os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
         with open(txt_file_path, "w") as f:
             f.write(f"Average Latency: {latency:.6f} seconds\n")
         return average_latency
-                
+
+    
 
 if __name__=="__main__":
     trainer_instance=trainer(args)
