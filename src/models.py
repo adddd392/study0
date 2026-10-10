@@ -12,3 +12,12 @@ def get_model(model_name):
     if model_name=="ConvNeXt-Tiny":
         return models.convnext_tiny()
     raise("Wrong model_name")
+
+
+if __name__=="__main__":
+    model=get_model("Resnet-50")
+    print(model)
+    model=get_model("MobileNetV3-Large")
+    print(model)
+    model=get_model("ConvNeXt-Tiny")
+    print(model)
