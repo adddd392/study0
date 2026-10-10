@@ -1,0 +1,23 @@
+from train import Trainer
+import time
+import os
+args={
+    "model_name":"Resnet-50",
+    "data_root":r"..\data\Mini-ImageNet-Dataset",
+    "use_train_csv":True,
+    "train_csv":r"..\data\Mini-ImageNet-Dataset\train.csv",
+    "use_val_csv":True,
+    "val_csv":r"..\data\Mini-ImageNet-Dataset\val.csv",
+    "use_test_csv":True,
+    "test_csv":r"..\data\Mini-ImageNet-Dataset\test.csv",
+    "num_epochs":10,
+    "device":"dml",
+    "batch_size":4,
+    "learning_rate":0.001,
+    "criterion":"CrossEntropyLoss",
+    "optimizer":"Adam",
+    "save_model":True,
+    "save_path":os.path.join(r"..\saved_models",r"Resnet-50",str(int(time.time())))
+}
+trainer = Trainer(args)
+trainer.run()

@@ -39,7 +39,8 @@ class trainer:
         self.criterion_init()
         self.optimizer_init()
         self.dataset_init()
-        
+    
+    
     def dataset_init(self):
         if self.args.use_train_csv:
             self.train_dataset = Mini_ImageNet_Datasets(csv_file=self.args.train_csv, data_root=os.path.join(self.args.data_root, "train"))
@@ -66,7 +67,7 @@ class trainer:
     def model_init(self):
         self.model = get_model(self.args.model_name)
         self.model.to(self.device)
-        
+    
     def criterion_init(self):
         if self.args.criterion == "CrossEntropyLoss":
             self.criterion = nn.CrossEntropyLoss()
@@ -231,6 +232,8 @@ class trainer:
         os.makedirs(os.path.join(self.args.save_path, "models"), exist_ok=True)
         save_path=os.path.join(self.args.save_path,"models" ,f"model_epoch_{epoch}.pth")
         torch.save(self.model.state_dict(), save_path)
+
+
 
 if __name__=="__main__":
     trainer_instance=trainer(args)
