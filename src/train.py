@@ -70,6 +70,8 @@ class trainer:
     def criterion_init(self):
         if self.args.criterion == "CrossEntropyLoss":
             self.criterion = nn.CrossEntropyLoss()
+        elif self.args.criterion == "label_smoothing":
+            self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
         else:
             raise ValueError("Wrong criterion name")
 
