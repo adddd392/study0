@@ -244,7 +244,7 @@ class trainer:
     def latency_test(self,warming_up_iterations=10,num_iterations=100):
         self.model.eval()
         with torch.no_grad():
-            
+            latency=0.0
             for _ in range(warming_up_iterations):
                 input_tensor = torch.randn(1, 3, 224, 224).to(self.device)
                 _ = self.model(input_tensor)
@@ -255,8 +255,11 @@ class trainer:
                 start_time = time.time()
                 _ = self.model(input_tensor)
                 end_time = time.time()
-                latency = end_time - start_time
-                print(f"Iteration {_+1}: Latency: {latency:.6f} seconds")
+                iterations_latency = end_time - start_time
+                latency += iterations_latency
+            average_latency = latency / num_iterations
+        return average_latency
+                
 
 if __name__=="__main__":
     trainer_instance=trainer(args)
