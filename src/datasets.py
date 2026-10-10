@@ -3,7 +3,9 @@ import torch
 from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
-import cv2
+import matplotlib.pyplot as plt
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 class Mini_ImageNet_Datasets(Dataset):
     def __init__(self,csv_file,data_root,inputsize=(224,224)):
         self.df=pd.read_csv(csv_file)
@@ -12,9 +14,14 @@ class Mini_ImageNet_Datasets(Dataset):
         
     def __getitem__(self, index):
         row=self.df.iloc[index]
-        image_path=os.path.join(self.data_root,row['filename'])
-        image=torch.load(image_path)
-        image=cv2.resize(image,self.inputsize)
+        image_path=os.path.join(self.data_root,row["label"],row['filename'])
+        image=plt.imread(image_path)
+        norm_mean = (0.5, 0.5, 0.5)
+        norm_std = (0.5, 0.5, 0.5)
+        image=A.Resize(height=self.inputsize[0],width=self.inputsize[1])(image=image)['image']
+        image=A.Normalize(mean=norm_mean,std=norm_std)(image=image)['image']
+        image=ToTensorV2()(image=image)['image']
+        
         label=row['label']
         return image,label
 
@@ -24,6 +31,9 @@ if __name__=="__main__":
     dataset=Mini_ImageNet_Datasets(csv_file=r"..\data\Mini-ImageNet-Dataset\train.csv",data_root=r"..\data\Mini-ImageNet-Dataset\train")
     print(len(dataset))
     image,label=dataset[0]
-    cv2.imshow("image",image)
-    cv2.waitKey(0)
-    cv2.destroywindow("image")
+    image=image.permute(1,2,0).numpy()
+    image=(image*0.5+0.5)*255
+    image=image.astype(np.uint8)
+    plt.imshow(image)
+    plt.show()
+
