@@ -31,11 +31,11 @@ args = parser.parse_args()
 class trainer:
     def __init__(self,args):
         self.args=args
-        #self.device_init()
-        #self.model_init()
-        #self.criterion_init()
-        #self.optimizer_init()
-        #self.dataset_init()
+        self.device_init()
+        self.model_init()
+        self.criterion_init()
+        self.optimizer_init()
+        self.dataset_init()
         
     def dataset_init(self):
         if self.args.use_train_csv:
@@ -70,16 +70,8 @@ class trainer:
         else:
             raise ValueError("Wrong criterion name")
 
+  
     def train_one_epoch(self):
-        epoch_loss,epoch_Top1_acc,epoch_Top5_acc=0.0,0.0,0.0
-        return epoch_loss,epoch_Top1_acc,epoch_Top5_acc
-    def validate(self):
-        val_loss,val_acc=0.0,0.0
-        return val_loss,val_acc
-    def test(self):
-        test_loss,test_acc=0.0,0.0
-        return test_loss,test_acc
-    def train_one_epoch_d(self):
         self.model.train()
         epoch_loss=0.0
         Top1_correct=0
@@ -107,7 +99,7 @@ class trainer:
         print(f"Top-5 Accuracy: {epoch_Top5_acc:.2f}%")
         return epoch_loss,epoch_Top1_acc,epoch_Top5_acc
 
-    def validate_d(self):
+    def validate(self):
         self.model.eval()
         val_loss=0.0
         correct=0
@@ -127,7 +119,7 @@ class trainer:
         print(f"Validation Loss: {val_loss:.4f}, Accuracy: {val_acc:.2f}%")
         return val_loss,val_acc
 
-    def test_d(self):
+    def test(self):
         self.model.eval()
         test_loss=0.0
         correct=0
