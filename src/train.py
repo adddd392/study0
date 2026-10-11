@@ -53,6 +53,8 @@ class trainer:
         self.args.model_name=new_model_name
         self.args.save_path=os.path.join(r"..\saved_models",self.args.model_name,str(int(time.time())))
         self.model_init()
+        self.criterion_init()
+        self.optimizer_init()
 
     
     def switch_criterion(self, new_criterion):
@@ -68,6 +70,8 @@ class trainer:
         self.args.device = new_device
         self.device_init()
         self.model.to(self.device)
+        self.criterion_init()
+        self.optimizer_init()
     
     def dataset_init(self):
         label_to_index_map=None
