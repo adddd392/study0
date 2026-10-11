@@ -42,7 +42,7 @@ class trainer:
         self.model_init()
         self.criterion_init()
         self.optimizer_init()
-        self.dataset_init()
+        #self.dataset_init()
     
     def switch_model(self,new_model_name):
         if self.device is "dml":
@@ -76,21 +76,33 @@ class trainer:
                                                         inputsize=self.args.input_size)
             self.train_loader = DataLoader(self.train_dataset, 
                                            batch_size=self.args.batch_size, 
-                                           shuffle=True)
+                                           shuffle=True,
+                                            num_workers=8,          
+                                            pin_memory=True,        
+                                            persistent_workers=True,
+                                                                                   )
         if self.args.use_val_csv:
             self.val_dataset = Mini_ImageNet_Datasets(csv_file=self.args.val_csv, 
                                                       data_root=os.path.join(self.args.data_root, "val"),
                                                       inputsize=self.args.input_size)
             self.val_loader = DataLoader(self.val_dataset, 
                                          batch_size=self.args.batch_size, 
-                                         shuffle=False)
+                                         shuffle=False,
+                                         num_workers=8,          
+                                        pin_memory=True,        
+                                        persistent_workers=True,
+                                        )
         if self.args.use_test_csv:
             self.test_dataset = Mini_ImageNet_Datasets(csv_file=self.args.test_csv, 
                                                        data_root=os.path.join(self.args.data_root,"test" ),
                                                        inputsize=self.args.input_size)
             self.test_loader = DataLoader(self.test_dataset, 
                                           batch_size=self.args.batch_size, 
-                                          shuffle=False)
+                                          shuffle=False,
+                                        num_workers=8,          
+                                        pin_memory=True,        
+                                        persistent_workers=True,
+                                         )
 
     def optimizer_init(self):
         if self.args.optimizer == "Adam":
@@ -213,6 +225,7 @@ class trainer:
         validation_losses=[]
         validation_Top1_accuracies=[]
         validation_Top5_accuracies=[]
+        self.dataset_init()
         for epoch in range(self.args.num_epochs):
             print(f"Epoch{epoch+1}/{self.args.num_epochs}")
             train_loss,train_Top1_acc,train_Top5_acc=self.train_one_epoch()

@@ -13,7 +13,7 @@ args={
     "test_csv":r"..\data\Mini-ImageNet-Dataset\test.csv",
     "num_epochs":10,
     "device":"cuda",
-    "batch_size":16,
+    "batch_size":32,
     "learning_rate":0.001,
     "criterion":"CrossEntropyLoss",
     "optimizer":"Adam",
@@ -22,22 +22,23 @@ args={
     "input_size":(224,224)
 }
 args = SimpleNamespace(**args)
-trainer = trainer(args)
-trainer.run()
-trainer.get_model_flops_and_parameters()
-trainer.latency_test()
-trainer.switch_device("cpu")
-trainer.latency_test()
-trainer.switch_device("dml")
-trainer.switch_model("MobileNetV3-Large")
-trainer.run()
-trainer.get_model_flops_and_parameters()
-trainer.latency_test()
-trainer.switch_device("cpu")
-trainer.latency_test()
-trainer.switch_device("dml")
-trainer.switch_model("ConvNeXt-Tiny")
-trainer.run()
-trainer.get_model_flops_and_parameters()
-trainer.latency_test()
-trainer.switch_criterion("label_smoothing")
+if __name__ == '__main__':
+    trainer = trainer(args)
+    trainer.run()
+    trainer.get_model_flops_and_parameters()
+    trainer.latency_test()
+    trainer.switch_device("cpu")
+    trainer.latency_test()
+    trainer.switch_device("dml")
+    trainer.switch_model("MobileNetV3-Large")
+    trainer.run()
+    trainer.get_model_flops_and_parameters()
+    trainer.latency_test()
+    trainer.switch_device("cpu")
+    trainer.latency_test()
+    trainer.switch_device("dml")
+    trainer.switch_model("ConvNeXt-Tiny")
+    trainer.run()
+    trainer.get_model_flops_and_parameters()
+    trainer.latency_test()
+    trainer.switch_criterion("label_smoothing")
