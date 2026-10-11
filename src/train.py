@@ -8,12 +8,13 @@ from models import get_model
 import os
 import argparse
 from tqdm import tqdm
-import torch_directml
+
 import matplotlib.pyplot as plt
 import time
 import pandas as pd
 from thop import profile
 import gc
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", type=str, default="Resnet-50")
@@ -47,6 +48,7 @@ class trainer:
         if self.device is "dml":
             del self.model
             gc.collect()
+            import torch_directml
             torch_directml.empty_cache()
         self.args.model_name=new_model_name
         self.args.save_path=os.path.join(r"..\saved_models",parser.parse_args().model_name,str(int(time.time())))
@@ -61,6 +63,7 @@ class trainer:
         if self.device is "dml":
             del self.model
             gc.collect()
+            import torch_directml
             torch_directml.empty_cache()
         self.args.device = new_device
         self.device_init()
@@ -69,22 +72,22 @@ class trainer:
     def dataset_init(self):
         if self.args.use_train_csv:
             self.train_dataset = Mini_ImageNet_Datasets(csv_file=self.args.train_csv, 
-                                                        data_root=os.path.join(self.args.data_root,
-                                                        inputsize=self.args.inputsize))
+                                                        data_root=os.path.join(self.args.data_root,"train"),
+                                                        inputsize=self.args.input_size)
             self.train_loader = DataLoader(self.train_dataset, 
                                            batch_size=self.args.batch_size, 
                                            shuffle=True)
         if self.args.use_val_csv:
             self.val_dataset = Mini_ImageNet_Datasets(csv_file=self.args.val_csv, 
-                                                      data_root=os.path.join(self.args.data_root, 
-                                                      inputsize=self.args.inputsize))
+                                                      data_root=os.path.join(self.args.data_root, "val"),
+                                                      inputsize=self.args.input_size)
             self.val_loader = DataLoader(self.val_dataset, 
                                          batch_size=self.args.batch_size, 
                                          shuffle=False)
         if self.args.use_test_csv:
             self.test_dataset = Mini_ImageNet_Datasets(csv_file=self.args.test_csv, 
-                                                       data_root=os.path.join(self.args.data_root, 
-                                                       inputsize=self.args.inputsize))
+                                                       data_root=os.path.join(self.args.data_root,"test" ),
+                                                       inputsize=self.args.input_size)
             self.test_loader = DataLoader(self.test_dataset, 
                                           batch_size=self.args.batch_size, 
                                           shuffle=False)
@@ -97,11 +100,14 @@ class trainer:
 
     def device_init(self):
         if self.args.device == "dml":
+            import torch_directml
             if not torch_directml.is_available():
                 raise ValueError("DirectML is not available.")
             self.device = torch_directml.device()
         if self.args.device == "cpu":
             self.device = torch.device("cpu")
+        if self.args.device == "cuda":
+            self.device = torch.device("cuda")
         
     def model_init(self):
         self.model = get_model(self.args.model_name)

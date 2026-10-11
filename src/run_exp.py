@@ -1,6 +1,7 @@
-from train import Trainer
+from train import trainer
 import time
 import os
+from types import SimpleNamespace
 args={
     "model_name":"Resnet-50",
     "data_root":r"..\data\Mini-ImageNet-Dataset",
@@ -11,8 +12,8 @@ args={
     "use_test_csv":True,
     "test_csv":r"..\data\Mini-ImageNet-Dataset\test.csv",
     "num_epochs":10,
-    "device":"dml",
-    "batch_size":4,
+    "device":"cuda",
+    "batch_size":16,
     "learning_rate":0.001,
     "criterion":"CrossEntropyLoss",
     "optimizer":"Adam",
@@ -20,7 +21,8 @@ args={
     "save_path":os.path.join(r"..\saved_models",r"Resnet-50",str(int(time.time()))),
     "input_size":(224,224)
 }
-trainer = Trainer(args)
+args = SimpleNamespace(**args)
+trainer = trainer(args)
 trainer.run()
 trainer.get_model_flops_and_parameters()
 trainer.latency_test()
