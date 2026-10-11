@@ -51,7 +51,7 @@ class trainer:
             import torch_directml
             torch_directml.empty_cache()
         self.args.model_name=new_model_name
-        self.args.save_path=os.path.join(r"..\saved_models",parser.parse_args().model_name,str(int(time.time())))
+        self.args.save_path=os.path.join(r"..\saved_models",self.args.model_name,str(int(time.time())))
         self.model_init()
 
     
@@ -70,10 +70,13 @@ class trainer:
         self.model.to(self.device)
     
     def dataset_init(self):
+        label_to_index_map=None
         if self.args.use_train_csv:
             self.train_dataset = Mini_ImageNet_Datasets(csv_file=self.args.train_csv, 
                                                         data_root=os.path.join(self.args.data_root,"train"),
-                                                        inputsize=self.args.input_size)
+                                                        inputsize=self.args.input_size,
+                                                        label_to_index_map=label_to_index_map)
+            label_to_index_map=self.train_dataset.get_map()
             self.train_loader = DataLoader(self.train_dataset, 
                                            batch_size=self.args.batch_size, 
                                            shuffle=True,
@@ -84,7 +87,9 @@ class trainer:
         if self.args.use_val_csv:
             self.val_dataset = Mini_ImageNet_Datasets(csv_file=self.args.val_csv, 
                                                       data_root=os.path.join(self.args.data_root, "val"),
-                                                      inputsize=self.args.input_size)
+                                                      inputsize=self.args.input_size,
+                                                      label_to_index_map=label_to_index_map)
+            label_to_index_map=self.val_dataset.get_map()
             self.val_loader = DataLoader(self.val_dataset, 
                                          batch_size=self.args.batch_size, 
                                          shuffle=False,
@@ -95,7 +100,9 @@ class trainer:
         if self.args.use_test_csv:
             self.test_dataset = Mini_ImageNet_Datasets(csv_file=self.args.test_csv, 
                                                        data_root=os.path.join(self.args.data_root,"test" ),
-                                                       inputsize=self.args.input_size)
+                                                       inputsize=self.args.input_size,
+                                                       label_to_index_map=label_to_index_map)
+            label_to_index_map=self.test_dataset.get_map()
             self.test_loader = DataLoader(self.test_dataset, 
                                           batch_size=self.args.batch_size, 
                                           shuffle=False,

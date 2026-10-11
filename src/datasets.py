@@ -7,11 +7,17 @@ import matplotlib.pyplot as plt
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 class Mini_ImageNet_Datasets(Dataset):
-    def __init__(self,csv_file,data_root,inputsize=(224,224)):
+    def __init__(self,csv_file,data_root,inputsize=(224,224),label_to_index_map=None):
         self.df=pd.read_csv(csv_file)
         self.data_root=data_root
         self.inputsize=inputsize
-        
+        if label_to_index_map==None:
+            label_classes=self.df['label'].unique()
+            self.label_to_index_map={label:i for i,label in enumerate(label_classes)}
+        else:
+             self.label_to_index_map=label_to_index_map
+    def get_map(self):
+        return self.label_to_index_map
     def __getitem__(self, index):
         row=self.df.iloc[index]
         image_path=os.path.join(self.data_root,row["label"],row['filename'])
@@ -23,9 +29,8 @@ class Mini_ImageNet_Datasets(Dataset):
         image=ToTensorV2()(image=image)['image']
         
         label=row['label']
-        label_classes=self.df['label'].unique()
-        label_to_index={label:i for i,label in enumerate(label_classes)}
-        label=label_to_index[label]
+  
+        label=self.label_to_index_map[label]
         return image,label
 
     def __len__(self):
