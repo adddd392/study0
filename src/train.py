@@ -252,7 +252,6 @@ class trainer:
 
     def draw_loss_acc_curve(self,training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses=None,validation_Top1_accuracies=None,validation_Top5_accuracies=None):
         epochs=range(1,self.args.num_epochs+1)
-        plt.figure()
         plt.plot(epochs,training_losses,label="Training Loss")
         if validation_losses is not None:
             plt.plot(epochs,validation_losses,label="Validation Loss")
@@ -260,10 +259,10 @@ class trainer:
         plt.xlabel("Epochs")
         plt.ylabel("Loss")
         plt.legend()
-        plt.show()
+        #plt.show()
         os.makedirs(os.path.join(self.args.save_path,"curves"), exist_ok=True)
         plt.savefig(os.path.join(self.args.save_path,"curves", "loss_curve.png"))
-        plt.figure()
+        #plt.figure()
         plt.plot(epochs,training_Top1_accuracies,label="Training Top-1 Accuracy")
         plt.plot(epochs,training_Top5_accuracies,label="Training Top-5 Accuracy")
         if validation_Top1_accuracies is not None:
@@ -274,7 +273,7 @@ class trainer:
         plt.xlabel("Epochs")
         plt.ylabel("Accuracy (%)")
         plt.legend()
-        plt.show()
+        #plt.show()
         os.makedirs(os.path.join(self.args.save_path,"curves"), exist_ok=True)
         plt.savefig(os.path.join(self.args.save_path,"curves", "accuracy_curve.png"))
 
@@ -320,7 +319,7 @@ class trainer:
         self.model.to(self.device)
 
     def get_model_flops_and_parameters(self):
-        flops, params = profile(self.model, inputs=(1, 3, 224,224))
+        flops, params = profile(self.model, inputs=(torch.randn(1, 3, 224, 224).to(self.device),))
         #print('FLOPs = ' + str(flops/1000**3) + 'G')
         #print('Params = ' + str(params/1000**2) + 'M')
         txt_file_path = os.path.join(self.args.save_path, "..","flops_and_parameters.txt")
