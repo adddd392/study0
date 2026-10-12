@@ -60,7 +60,7 @@ class trainer:
     def switch_criterion(self, new_criterion):
         self.args.criterion = new_criterion
         self.criterion_init()
-
+        self.args.save_path=os.path.join(r"..\saved_models",self.args.model_name,str(int(time.time())))
     def switch_device(self, new_device):
         if self.device is "dml":
             del self.model
@@ -263,6 +263,7 @@ class trainer:
 
     def draw_loss_acc_curve(self,training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses=None,validation_Top1_accuracies=None,validation_Top5_accuracies=None):
         epochs=range(1,self.args.num_epochs+1)
+        fig, ax = plt.subplots()
         plt.plot(epochs,training_losses,label="Training Loss")
         if validation_losses is not None:
             plt.plot(epochs,validation_losses,label="Validation Loss")
@@ -274,8 +275,11 @@ class trainer:
         os.makedirs(os.path.join(self.args.save_path,"curves"), exist_ok=True)
         plt.savefig(os.path.join(self.args.save_path,"curves", "loss_curve.png"))
         #plt.figure()
+        plt.close(fig) 
+        fig, ax = plt.subplots()
         plt.plot(epochs,training_Top1_accuracies,label="Training Top-1 Accuracy")
         plt.plot(epochs,training_Top5_accuracies,label="Training Top-5 Accuracy")
+       
         if validation_Top1_accuracies is not None:
             plt.plot(epochs,validation_Top1_accuracies,label="Validation Top-1 Accuracy")
         if validation_Top5_accuracies is not None:
@@ -287,7 +291,7 @@ class trainer:
         #plt.show()
         os.makedirs(os.path.join(self.args.save_path,"curves"), exist_ok=True)
         plt.savefig(os.path.join(self.args.save_path,"curves", "accuracy_curve.png"))
-
+        plt.close(fig) 
     def run(self):
         training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,best_val_epoch,best_val_loss=self.run_train()
         if validation_losses is not None:
