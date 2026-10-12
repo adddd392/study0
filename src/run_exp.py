@@ -11,7 +11,7 @@ args={
     "val_csv":r"..\data\Mini-ImageNet-Dataset\val.csv",
     "use_test_csv":True,
     "test_csv":r"..\data\Mini-ImageNet-Dataset\test.csv",
-    "num_epochs":10,
+    "num_epochs":30,
     "device":"cuda",
     "batch_size":32,
     "learning_rate":0.001,
@@ -24,7 +24,7 @@ args={
 args = SimpleNamespace(**args)
 if __name__ == '__main__':
     trainer = trainer(args)
-    """ trainer.run()
+    trainer.run()
     trainer.get_model_flops_and_parameters()
     trainer.latency_test()
     trainer.switch_device("cpu")
@@ -35,11 +35,13 @@ if __name__ == '__main__':
     trainer.get_model_flops_and_parameters()
     trainer.latency_test()
     trainer.switch_device("cpu")
-    trainer.latency_test() """
+    trainer.latency_test() 
+    """
     trainer.switch_device("cuda")
     trainer.switch_model("ConvNeXt-Tiny")
-    #trainer.run()
-    #trainer.get_model_flops_and_parameters()
-    #trainer.latency_test()
+    trainer.run()
+    trainer.get_model_flops_and_parameters()
+    trainer.latency_test()
     trainer.switch_criterion("label_smoothing")
     trainer.run()
+    """
