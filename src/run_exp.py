@@ -41,6 +41,10 @@ if __name__ == '__main__':
     trainer.run()
     trainer.get_model_flops_and_parameters()
     trainer.latency_test()
+    trainer.switch_device("cpu")
+    trainer.latency_test() 
+    trainer.switch_device("cuda")
+    trainer.switch_model("ConvNeXt-Tiny")
     trainer.switch_criterion("label_smoothing")
     trainer.run()
     
