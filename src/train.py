@@ -346,33 +346,66 @@ class trainer:
             f.write(f"Params = {params/1000**2:.4f} M\n")
         return  flops,params
 
-    def latency_test(self,warming_up_iterations=10,num_iterations=100):
+    def latency_test(self, warming_up_iterations=10, num_iterations=100):
         self.model.eval()
+        device = self.device
+        is_cuda = device.type == "cuda"
+
         def sync():
-            if self.device.type == "cuda":
+            if is_cuda:
                 torch.cuda.synchronize()
+
+        # 固定输入
+        input_tensor = torch.randn(
+            1, 3, self.args.input_size[0], self.args.input_size[1]
+        ).to(device)
+
         with torch.no_grad():
-            latency=0.0
-
+            # ---------------- warmup ----------------
             for _ in range(warming_up_iterations):
-                input_tensor = torch.randn(1, 3, self.args.input_size[0], self.args.input_size[1]).to(self.device)
                 _ = self.model(input_tensor)
+            sync()   # warmup 后同步一次
 
-           
+            # ---------------- 计时 ----------------
+            latencies = []
             for _ in range(num_iterations):
-                input_tensor = torch.randn(1, 3, self.args.input_size[0], self.args.input_size[1]).to(self.device)
-                start_time = time.time()
-                _ = self.model(input_tensor)
-                end_time = time.time()
-                iterations_latency = end_time - start_time
-                latency += iterations_latency
+                if is_cuda:
+                    # GPU 上用 Event 打时间戳
+                    start_event = torch.cuda.Event(enable_timing=True)
+                    end_event   = torch.cuda.Event(enable_timing=True)
+                    start_event.record()
+                    _ = self.model(input_tensor)
+                    end_event.record()
+                    sync()  
+                    latencies.append(start_event.elapsed_time(end_event))  
+                else:
+                    start = time.perf_counter()
+                    _ = self.model(input_tensor)
+                    end = time.perf_counter()
+                    latencies.append((end - start) * 1000.0)                 
 
-        average_latency = latency / num_iterations
-        txt_file_path = os.path.join(self.args.save_path, "..",str(self.args.device)+"_latency.txt")
+        latencies = np.array(latencies)
+        mean_lat   = float(latencies.mean())
+        median_lat = float(np.median(latencies))
+        std_lat    = float(latencies.std())
+        p95_lat    = float(np.percentile(latencies, 95))
+
+        # ---------------- 保存 ----------------
+        device_str = str(device).replace(":", "_")      # 避免 Windows 非法字符
+        txt_file_path = os.path.join(self.args.save_path, "..", str(self.args.device)+"_latency.txt")
         os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
+
         with open(txt_file_path, "w") as f:
-            f.write(f"Average Latency: {average_latency*1000:.6f} ms\n")
-        return average_latency
+            f.write(f"Device          : {device}\n")
+            f.write(f"Warmup iters    : {warming_up_iterations}\n")
+            f.write(f"Test iters      : {num_iterations}\n")
+            f.write(f"Average Latency : {mean_lat:.6f} ms\n")
+            f.write(f"Median  Latency : {median_lat:.6f} ms\n")
+            f.write(f"Std     Latency : {std_lat:.6f} ms\n")
+            f.write(f"P95     Latency : {p95_lat:.6f} ms\n")
+
+        # 返回平均值，保持和你原来接口一致
+        return mean_lat
 
     
 
