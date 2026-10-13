@@ -15,63 +15,56 @@ import pandas as pd
 from thop import profile
 import gc
 
+import random
+import numpy as np
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--model_name", type=str, default="Resnet-50")
-parser.add_argument("--data_root", type=str, default=r"..\data\Mini-ImageNet-Dataset")
-parser.add_argument("--use_train_csv", type=bool, default=True)
-parser.add_argument("--train_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\train.csv")
-parser.add_argument("--use_val_csv", type=bool, default=True)
-parser.add_argument("--val_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\val.csv")
-parser.add_argument("--use_test_csv", type=bool, default=True)
-parser.add_argument("--test_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\test.csv")
-parser.add_argument("--num_epochs", type=int, default=10)
-parser.add_argument("--device", type=str, default="dml")
-parser.add_argument("--batch_size", type=int, default=4)
-parser.add_argument("--learning_rate", type=float, default=0.001)
-parser.add_argument("--criterion", type=str, default="CrossEntropyLoss")
-parser.add_argument("--optimizer", type=str, default="Adam")
-parser.add_argument("--save_model", type=bool, default=True)
-parser.add_argument("--save_path", type=str, default=os.path.join(r"..\saved_models",parser.parse_args().model_name,str(int(time.time()))))
-parser.add_argument("--input_size", type=tuple, default=(224.224))
-args = parser.parse_args()
+
+
+
+
 class trainer:
     def __init__(self,args):
         self.args=args
         self.device_init()
-        self.model_init()
-        self.criterion_init()
-        self.optimizer_init()
+        self.model = None
+        #self.model_init()
+        #self.criterion_init()
+        #self.optimizer_init()
         #self.dataset_init()
-    
+    @staticmethod
+    def set_seed(seed=42):
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
     def switch_model(self,new_model_name):
-        if self.device is "dml":
-            del self.model
+        if self.device == "dml":
+            self.model = None
             gc.collect()
             import torch_directml
             torch_directml.empty_cache()
         self.args.model_name=new_model_name
         self.args.save_path=os.path.join(r"..\saved_models",self.args.model_name,str(int(time.time())))
-        self.model_init()
-        self.criterion_init()
-        self.optimizer_init()
+
+      
 
     
     def switch_criterion(self, new_criterion):
         self.args.criterion = new_criterion
         self.criterion_init()
         self.args.save_path=os.path.join(r"..\saved_models",self.args.model_name,str(int(time.time())))
+
     def switch_device(self, new_device):
-        if self.device is "dml":
-            del self.model
+        if self.device == "dml":
+            if self.model is not None:
+                self.model = None
             gc.collect()
             import torch_directml
             torch_directml.empty_cache()
         self.args.device = new_device
         self.device_init()
         self.model.to(self.device)
-        self.criterion_init()
-        self.optimizer_init()
     
     def dataset_init(self):
         label_to_index_map=None
@@ -114,7 +107,7 @@ class trainer:
                                         pin_memory=True,        
                                         persistent_workers=True,
                                          )
-
+        return len(label_to_index_map)
     def optimizer_init(self):
         if self.args.optimizer == "Adam":
             self.optimizer = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
@@ -132,9 +125,12 @@ class trainer:
         if self.args.device == "cuda":
             self.device = torch.device("cuda")
         
-    def model_init(self):
-        self.model = get_model(self.args.model_name)
+    def model_init(self,num_classes):
+        self.model = get_model(self.args.model_name,num_classes)
         self.model.to(self.device)
+        self.optimizer_init()
+        self.criterion_init()
+        self.args.save_path=os.path.join(r"..\saved_models",self.args.model_name,str(int(time.time())))
     
     def criterion_init(self):
         if self.args.criterion == "CrossEntropyLoss":
@@ -227,7 +223,7 @@ class trainer:
     def run_train(self):
         if not self.args.use_train_csv:
             print("Train CSV not provided.")
-            return None,None,None,None
+            return None,None,None,None,None,None,None,None
         best_val_loss=float('inf')
         best_val_epoch=None
         training_losses=[]
@@ -236,7 +232,9 @@ class trainer:
         validation_losses=[]
         validation_Top1_accuracies=[]
         validation_Top5_accuracies=[]
-        self.dataset_init()
+        
+        self.set_seed(self.args.seed)
+        self.model_init(self.num_classes)
         for epoch in range(self.args.num_epochs):
             print(f"Epoch{epoch+1}/{self.args.num_epochs}")
             train_loss,train_Top1_acc,train_Top5_acc=self.train_one_epoch()
@@ -251,7 +249,7 @@ class trainer:
             if self.args.save_model and self.args.use_val_csv and val_loss<best_val_loss:
                 best_val_loss=val_loss
                 best_val_epoch=epoch+1
-                self.save_model(epoch+1)
+                self.best_model_path=self.save_model(epoch+1)
         return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,best_val_epoch,best_val_loss
 
     def run_test(self):
@@ -293,10 +291,13 @@ class trainer:
         plt.savefig(os.path.join(self.args.save_path,"curves", "accuracy_curve.png"))
         plt.close(fig) 
     def run(self):
+        self.num_classes=self.dataset_init()
         training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,best_val_epoch,best_val_loss=self.run_train()
         if validation_losses is not None:
-            best_val_epoch=validation_losses.index(min(validation_losses))+1
-            self.load_model(os.path.join(self.args.save_path,"models",f"model_epoch_{best_val_epoch}.pth"))
+            if self.args.use_test_csv ==True:
+                best_model_path = getattr(self, "best_model_path", None)
+                if best_model_path and os.path.exists(best_model_path):
+                    self.load_model(best_model_path)
         test_loss,test_Top1_acc,test_Top5_acc=self.run_test()
         self.draw_loss_acc_curve(training_losses=training_losses,
                                  training_Top1_accuracies=training_Top1_accuracies,
@@ -328,13 +329,14 @@ class trainer:
         os.makedirs(os.path.join(self.args.save_path, "models"), exist_ok=True)
         save_path=os.path.join(self.args.save_path,"models" ,f"model_epoch_{epoch}.pth")
         torch.save(self.model.state_dict(), save_path)
+        return save_path
 
     def load_model(self,model_path):
         self.model.load_state_dict(torch.load(model_path, map_location="cpu"))
         self.model.to(self.device)
 
     def get_model_flops_and_parameters(self):
-        flops, params = profile(self.model, inputs=(torch.randn(1, 3, 224, 224).to(self.device),))
+        flops, params = profile(self.model, inputs=(torch.randn(1, 3, self.args.input_size[0], self.args.input_size[1]).to(self.device),))
         #print('FLOPs = ' + str(flops/1000**3) + 'G')
         #print('Params = ' + str(params/1000**2) + 'M')
         txt_file_path = os.path.join(self.args.save_path, "..","flops_and_parameters.txt")
@@ -346,16 +348,19 @@ class trainer:
 
     def latency_test(self,warming_up_iterations=10,num_iterations=100):
         self.model.eval()
+        def sync():
+            if self.device.type == "cuda":
+                torch.cuda.synchronize()
         with torch.no_grad():
             latency=0.0
 
             for _ in range(warming_up_iterations):
-                input_tensor = torch.randn(1, 3, 224, 224).to(self.device)
+                input_tensor = torch.randn(1, 3, self.args.input_size[0], self.args.input_size[1]).to(self.device)
                 _ = self.model(input_tensor)
 
            
             for _ in range(num_iterations):
-                input_tensor = torch.randn(1, 3, 224, 224).to(self.device)
+                input_tensor = torch.randn(1, 3, self.args.input_size[0], self.args.input_size[1]).to(self.device)
                 start_time = time.time()
                 _ = self.model(input_tensor)
                 end_time = time.time()
@@ -366,11 +371,31 @@ class trainer:
         txt_file_path = os.path.join(self.args.save_path, "..",str(self.args.device)+"_latency.txt")
         os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
         with open(txt_file_path, "w") as f:
-            f.write(f"Average Latency: {latency:.6f} seconds\n")
+            f.write(f"Average Latency: {average_latency*1000:.6f} ms\n")
         return average_latency
 
     
 
 if __name__=="__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, default="Resnet-50")
+    parser.add_argument("--data_root", type=str, default=r"..\data\Mini-ImageNet-Dataset")
+    parser.add_argument("--use_train_csv", type=bool, default=True)
+    parser.add_argument("--train_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\train.csv")
+    parser.add_argument("--use_val_csv", type=bool, default=True)
+    parser.add_argument("--val_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\val.csv")
+    parser.add_argument("--use_test_csv", type=bool, default=True)
+    parser.add_argument("--test_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\test.csv")
+    parser.add_argument("--num_epochs", type=int, default=10)
+    parser.add_argument("--device", type=str, default="dml")
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--learning_rate", type=float, default=0.001)
+    parser.add_argument("--criterion", type=str, default="CrossEntropyLoss")
+    parser.add_argument("--optimizer", type=str, default="Adam")
+    parser.add_argument("--save_model", type=bool, default=True)
+    parser.add_argument("--save_path", type=str, default=os.path.join(r"..\saved_models",parser.parse_args().model_name,str(int(time.time()))))
+    parser.add_argument("--input_size", type=tuple, default=(224,224))
+    parser.add_argument("--seed", type=int, default=0)
+    args = parser.parse_args()
     trainer_instance=trainer(args)
     trainer_instance.run()

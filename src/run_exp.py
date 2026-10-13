@@ -19,7 +19,8 @@ args={
     "optimizer":"Adam",
     "save_model":True,
     "save_path":os.path.join(r"..\saved_models",r"Resnet-50",str(int(time.time()))),
-    "input_size":(224,224)
+    "input_size":(224,224),
+    "seed":0
 }
 args = SimpleNamespace(**args)
 if __name__ == '__main__':
