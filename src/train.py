@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from datasets import Mini_ImageNet_Datasets
 from models import get_model
 import seeding
+import device_utils
 import os
 import argparse
 from tqdm import tqdm
@@ -109,16 +110,8 @@ class trainer:
             raise ValueError("Wrong optimizer name")
 
     def device_init(self):
-        if self.args.device == "dml":
-            import torch_directml
-            if not torch_directml.is_available():
-                raise ValueError("DirectML is not available.")
-            self.device = torch_directml.device()
-        if self.args.device == "cpu":
-            self.device = torch.device("cpu")
-        if self.args.device == "cuda":
-            self.device = torch.device("cuda")
-        
+        self.device = device_utils.resolve_device(self.args.device)
+
     def model_init(self,num_classes):
         self.model = get_model(self.args.model_name,num_classes)
         self.model.to(self.device)
