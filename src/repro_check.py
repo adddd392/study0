@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader  # noqa: E402
 
 from datasets import Mini_ImageNet_Datasets  # noqa: E402
 from models import get_model  # noqa: E402
-from train import trainer  # noqa: E402
+import seeding  # noqa: E402
 
 SEED = 42
 
@@ -44,7 +44,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.no_seed:
-        trainer.set_seed(SEED)
+        seeding.set_seed(SEED)
 
     print(f"seed_used = {not args.no_seed}")
     print(f"num_workers = {args.num_workers}")

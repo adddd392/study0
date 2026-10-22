@@ -31,9 +31,6 @@ class trainer:
         #self.criterion_init()
         #self.optimizer_init()
         #self.dataset_init()
-    @staticmethod
-    def set_seed(seed=42):
-        seeding.set_seed(seed)
 
     def switch_model(self,new_model_name):
         if self.device == "dml":
@@ -230,7 +227,7 @@ class trainer:
         validation_Top1_accuracies=[]
         validation_Top5_accuracies=[]
         
-        self.set_seed(self.args.seed)
+        seeding.set_seed(self.args.seed)
         self.model_init(self.num_classes)
         for epoch in range(self.args.num_epochs):
             print(f"Epoch{epoch+1}/{self.args.num_epochs}")
