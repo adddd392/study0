@@ -331,15 +331,30 @@ class trainer:
         self.model.to(self.device)
 
     def get_model_flops_and_parameters(self):
-        flops, params = profile(self.model, inputs=(torch.randn(1, 3, self.args.input_size[0], self.args.input_size[1]).to(self.device),))
-        #print('FLOPs = ' + str(flops/1000**3) + 'G')
-        #print('Params = ' + str(params/1000**2) + 'M')
-        txt_file_path = os.path.join(self.args.save_path, "..","flops_and_parameters.txt")
-        os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
-        with open(txt_file_path, "w") as f:
-            f.write(f"FLOPs = {flops/1000**3:.4f} G\n")
-            f.write(f"Params = {params/1000**2:.4f} M\n")
-        return  flops,params
+        """统计模型乘加次数（MACs）与参数量，并写入报告文件。
+
+        注意：thop.profile 返回的是 MACs（乘加次数），不是 FLOPs。
+        按惯例 1 MAC ≈ 2 FLOPs，需要 FLOPs 时自行乘 2。
+        """
+        macs, params = profile(
+            self.model,
+            inputs=(
+                torch.randn(
+                    1,
+                    3,
+                    self.args.input_size[0],
+                    self.args.input_size[1],
+                ).to(self.device),
+            ),
+        )
+        report_path = os.path.join(
+            self.args.save_path, "..", "macs_and_parameters.txt"
+        )
+        os.makedirs(os.path.dirname(report_path), exist_ok=True)
+        with open(report_path, "w", encoding="utf-8") as handle:
+            handle.write(f"MACs = {macs / 1000**3:.4f} G\n")
+            handle.write(f"Params = {params / 1000**2:.4f} M\n")
+        return macs, params
 
     def latency_test(self, warming_up_iterations=10, num_iterations=100):
         self.model.eval()
