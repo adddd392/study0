@@ -6,13 +6,13 @@ from datasets import Mini_ImageNet_Datasets
 from models import get_model
 import profiling
 import checkpoint
+import plotting
 import seeding
 import device_utils
 import os
 import argparse
 from tqdm import tqdm
 
-import matplotlib.pyplot as plt
 import time
 import gc
 
@@ -248,37 +248,46 @@ class trainer:
         test_loss, test_Top1_acc, test_Top5_acc = self.test()
         return test_loss, test_Top1_acc, test_Top5_acc
 
-    def draw_loss_acc_curve(self, training_losses, training_Top1_accuracies, training_Top5_accuracies, validation_losses=None, validation_Top1_accuracies=None, validation_Top5_accuracies=None):
-        epochs = range(1, self.args.num_epochs + 1)
-        fig, ax = plt.subplots()
-        plt.plot(epochs, training_losses, label="Training Loss")
-        if validation_losses is not None:
-            plt.plot(epochs, validation_losses, label="Validation Loss")
-        plt.title("Loss Curve")
-        plt.xlabel("Epochs")
-        plt.ylabel("Loss")
-        plt.legend()
-        # plt.show()
-        os.makedirs(os.path.join(self.args.save_path, "curves"), exist_ok=True)
-        plt.savefig(os.path.join(self.args.save_path, "curves", "loss_curve.png"))
-        # plt.figure()
-        plt.close(fig)
-        fig, ax = plt.subplots()
-        plt.plot(epochs, training_Top1_accuracies, label="Training Top-1 Accuracy")
-        plt.plot(epochs, training_Top5_accuracies, label="Training Top-5 Accuracy")
+    def draw_loss_acc_curve(self, training_losses, training_Top1_accuracies,
+                            training_Top5_accuracies, validation_losses=None,
+                            validation_Top1_accuracies=None,
+                            validation_Top5_accuracies=None):
+        """绘制损失曲线与准确率曲线。
 
+        两张图分开存到 <save_path>/curves/ 下：loss_curve.png 与
+        accuracy_curve.png。分两张是因为 loss（0~几）与 accuracy（0~100）
+        量纲不同，画在同一套 y 轴上 loss 会被压成一条直线。
+        """
+        curves_dir = os.path.join(self.args.save_path, "curves")
+
+        acc_series = [
+            (training_Top1_accuracies, "Training Top-1 Accuracy"),
+            (training_Top5_accuracies, "Training Top-5 Accuracy"),
+        ]
         if validation_Top1_accuracies is not None:
-            plt.plot(epochs, validation_Top1_accuracies, label="Validation Top-1 Accuracy")
+            acc_series.append(
+                (validation_Top1_accuracies, "Validation Top-1 Accuracy")
+            )
         if validation_Top5_accuracies is not None:
-            plt.plot(epochs, validation_Top5_accuracies, label="Validation Top-5 Accuracy")
-        plt.title("Accuracy Curve")
-        plt.xlabel("Epochs")
-        plt.ylabel("Accuracy (%)")
-        plt.legend()
-        # plt.show()
-        os.makedirs(os.path.join(self.args.save_path, "curves"), exist_ok=True)
-        plt.savefig(os.path.join(self.args.save_path, "curves", "accuracy_curve.png"))
-        plt.close(fig)
+            acc_series.append(
+                (validation_Top5_accuracies, "Validation Top-5 Accuracy")
+            )
+        plotting.save_curve(
+            os.path.join(curves_dir, "accuracy_curve.png"),
+            "Accuracy Curve",
+            "Accuracy (%)",
+            acc_series,
+        )
+
+        loss_series = [(training_losses, "Training Loss")]
+        if validation_losses is not None:
+            loss_series.append((validation_losses, "Validation Loss"))
+        plotting.save_curve(
+            os.path.join(curves_dir, "loss_curve.png"),
+            "Loss Curve",
+            "Loss",
+            loss_series,
+        )
 
     def run(self):
         self.num_classes = self.dataset_init()
