@@ -1,35 +1,43 @@
 """可复现性自检：两次独立运行，输出必须完全一致。
 
-用法（任意工作目录均可）::
+这不是单元测试，而是「对照实验」工具：
 
-    python repro_check.py            # 实验组：设种子
-    python repro_check.py --no-seed  # 对照组：不设种子
+    对照组（不设种子）跑两次 → 输出必须【不同】
+    实验组（设种子）  跑两次 → 输出必须【相同】
 
-期望：对照组的两次输出不同，实验组的两次输出完全相同。
+只有对照组的两次不同、实验组的两次相同，才能证明种子真的生效。
+
+运行::
+
+    python tests/test_reproducibility.py --no-seed > a1.txt
+    python tests/test_reproducibility.py --no-seed > a2.txt
+    python tests/test_reproducibility.py           > b1.txt
+    python tests/test_reproducibility.py           > b2.txt
+
+    fc /b a1.txt a2.txt     # 期望：有差异
+    fc /b b1.txt b2.txt     # 期望：no differences
 """
-
-from __future__ import annotations
 
 import argparse
 import os
 import sys
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-if SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, SCRIPT_DIR)
+_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 import torch  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 
+import seeding  # noqa: E402
 from datasets import Mini_ImageNet_Datasets  # noqa: E402
 from models import get_model  # noqa: E402
-import seeding  # noqa: E402
 
 SEED = 42
 
 # src/ 的上两级才是 代码/，数据放在 代码/data/Mini-ImageNet-Dataset
 DATA_ROOT = os.path.abspath(
-    os.path.join(SCRIPT_DIR, "..", "..", "data", "Mini-ImageNet-Dataset")
+    os.path.join(_SRC, "..", "..", "data", "Mini-ImageNet-Dataset")
 )
 
 

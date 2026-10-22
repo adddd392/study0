@@ -4,12 +4,23 @@
     1. 正常路径：合法设备名返回 torch.device
     2. 错误路径：非法设备名必须抛 ValueError
 
-注意不测 "dml"：当前环境为 CPU 版 torch，torch_directml 未必安装。
+不测 "dml"：当前环境为 CPU 版 torch，torch_directml 未必安装。
+
+运行::
+
+    python tests/test_device.py
 """
 
-import torch
+import os
+import sys
 
-from device_utils import resolve_device
+_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
+
+import torch  # noqa: E402
+
+from device_utils import resolve_device  # noqa: E402
 
 
 def main() -> int:
