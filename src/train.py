@@ -143,85 +143,59 @@ class trainer:
         else:
             raise ValueError("Wrong criterion name")
 
-    def train_one_epoch(self):
-        self.model.train()
+    def _run_epoch(self, loader, is_train, label):
+        """跑一个 epoch，返回 (平均损失, Top-1 正确率, Top-5 正确率)。
+
+        is_train 同时决定三件事：模型处于 train 还是 eval 模式、梯度是否
+        开启、是否执行 backward + optimizer.step。评估时在循环外统一关闭
+        梯度，避免逐批创建 no_grad 上下文。
+        """
+        self.model.train(is_train)
         epoch_loss = 0.0
         Top1_correct = 0
         Top5_correct = 0
         total = 0
-        for images, labels in tqdm(self.train_loader):
-            images = images.to(self.device)
-            labels = labels.to(self.device)
-            self.optimizer.zero_grad()
-            outputs = self.model(images)
-            loss = self.criterion(outputs, labels)
-            loss.backward()
-            self.optimizer.step()
-            epoch_loss += loss.item() * images.size(0)
-            _, Top1_predicted = torch.max(outputs, 1)
-            total += labels.size(0)
-            Top1_correct += (Top1_predicted == labels).sum().item()
+        with torch.set_grad_enabled(is_train):
+            for images, labels in tqdm(loader):
+                images = images.to(self.device)
+                labels = labels.to(self.device)
+                if is_train:
+                    self.optimizer.zero_grad()
+                outputs = self.model(images)
+                loss = self.criterion(outputs, labels)
+                if is_train:
+                    loss.backward()
+                    self.optimizer.step()
+                epoch_loss += loss.item() * images.size(0)
+                _, Top1_predicted = torch.max(outputs, 1)
+                total += labels.size(0)
+                Top1_correct += (Top1_predicted == labels).sum().item()
 
-            _, Top5_predicted = torch.topk(outputs, 5, dim=1)
-            Top5_correct += (Top5_predicted.eq(labels.view(-1, 1))).sum().item()
+                _, Top5_predicted = torch.topk(outputs, 5, dim=1)
+                Top5_hit = Top5_predicted.eq(labels.view(-1, 1))
+                Top5_correct += Top5_hit.sum().item()
         epoch_Top1_acc = 100. * Top1_correct / total
         epoch_Top5_acc = 100. * Top5_correct / total
         epoch_loss /= total
-        print(f"Epoch Loss: {epoch_loss:.4f}, Top-1 Accuracy: {epoch_Top1_acc:.2f}%")
+        print(f"{label} Loss: {epoch_loss:.4f}, "
+              f"Top-1 Accuracy: {epoch_Top1_acc:.2f}%")
         print(f"Top-5 Accuracy: {epoch_Top5_acc:.2f}%")
         return epoch_loss, epoch_Top1_acc, epoch_Top5_acc
 
-    def validate(self):
-        self.model.eval()
-        val_loss = 0.0
-        Top1_correct = 0
-        Top5_correct = 0
-        total = 0
-        with torch.no_grad():
-            for images, labels in tqdm(self.val_loader):
-                images = images.to(self.device)
-                labels = labels.to(self.device)
-                outputs = self.model(images)
-                loss = self.criterion(outputs, labels)
-                val_loss += loss.item() * images.size(0)
-                _, Top1_predicted = torch.max(outputs, 1)
-                total += labels.size(0)
-                Top1_correct += (Top1_predicted == labels).sum().item()
+    def train_one_epoch(self):
+        """训练一个 epoch，返回 (训练损失, Top-1 正确率, Top-5 正确率)。"""
+        return self._run_epoch(
+            self.train_loader, is_train=True, label="Training")
 
-                _, Top5_predicted = torch.topk(outputs, 5, dim=1)
-                Top5_correct += (Top5_predicted.eq(labels.view(-1, 1))).sum().item()
-        val_Top1_acc = 100. * Top1_correct / total
-        val_Top5_acc = 100. * Top5_correct / total
-        val_loss /= total
-        print(f"Validation Loss: {val_loss:.4f}, Top-1 Accuracy: {val_Top1_acc:.2f}%")
-        print(f"Top-5 Accuracy: {val_Top5_acc:.2f}%")
-        return val_loss, val_Top1_acc, val_Top5_acc
+    def validate(self):
+        """在验证集上评估，返回 (验证损失, Top-1 正确率, Top-5 正确率)。"""
+        return self._run_epoch(
+            self.val_loader, is_train=False, label="Validation")
 
     def test(self):
-        self.model.eval()
-        test_loss = 0.0
-        Top1_correct = 0
-        Top5_correct = 0
-        total = 0
-        with torch.no_grad():
-            for images, labels in tqdm(self.test_loader):
-                images = images.to(self.device)
-                labels = labels.to(self.device)
-                outputs = self.model(images)
-                loss = self.criterion(outputs, labels)
-                test_loss += loss.item() * images.size(0)
-                _, Top1_predicted = torch.max(outputs, 1)
-                total += labels.size(0)
-                Top1_correct += (Top1_predicted == labels).sum().item()
-
-                _, Top5_predicted = torch.topk(outputs, 5, dim=1)
-                Top5_correct += (Top5_predicted.eq(labels.view(-1, 1))).sum().item()
-        test_Top1_acc = 100. * Top1_correct / total
-        test_Top5_acc = 100. * Top5_correct / total
-        test_loss /= total
-        print(f"Test Loss: {test_loss:.4f}, Top-1 Accuracy: {test_Top1_acc:.2f}%")
-        print(f"Top-5 Accuracy: {test_Top5_acc:.2f}%")
-        return test_loss, test_Top1_acc, test_Top5_acc
+        """在测试集上评估，返回 (测试损失, Top-1 正确率, Top-5 正确率)。"""
+        return self._run_epoch(
+            self.test_loader, is_train=False, label="Test")
 
     def run_train(self):
         if not self.args.use_train_csv:
