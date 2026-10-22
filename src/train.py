@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
-import torchvision.models as models
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from datasets import Mini_ImageNet_Datasets
 from models import get_model
+import profiling
 import checkpoint
 import seeding
 import device_utils
@@ -14,8 +14,6 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 import time
-import pandas as pd
-from thop import profile
 import gc
 
 import numpy as np
@@ -290,7 +288,7 @@ class trainer:
         self.num_classes=self.dataset_init()
         training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,best_val_epoch,best_val_loss=self.run_train()
         if validation_losses is not None:
-            if self.args.use_test_csv ==True:
+            if self.args.use_test_csv :
                 best_model_path = getattr(self, "best_model_path", None)
                 if best_model_path and os.path.exists(best_model_path):
                     self.load_model(best_model_path)
@@ -330,32 +328,16 @@ class trainer:
         self.model.load_state_dict(checkpoint.load_checkpoint(model_path))
         self.model.to(self.device)
 
-    def get_model_flops_and_parameters(self):
+    def get_model_macs_and_parameters(self):
         """统计模型乘加次数（MACs）与参数量，并写入报告文件。
 
-        注意：thop.profile 返回的是 MACs（乘加次数），不是 FLOPs。
-        按惯例 1 MAC ≈ 2 FLOPs，需要 FLOPs 时自行乘 2。
+        注意：thop.profile 返回的是 macs（乘加次数），不是 FLOPs。
+        按惯例 1 mac ≈ 2 FLOPs，需要 FLOPs 时自行乘 2。
         """
-        macs, params = profile(
-            self.model,
-            inputs=(
-                torch.randn(
-                    1,
-                    3,
-                    self.args.input_size[0],
-                    self.args.input_size[1],
-                ).to(self.device),
-            ),
-        )
-        report_path = os.path.join(
-            self.args.save_path, "..", "macs_and_parameters.txt"
-        )
-        os.makedirs(os.path.dirname(report_path), exist_ok=True)
-        with open(report_path, "w", encoding="utf-8") as handle:
-            handle.write(f"MACs = {macs / 1000**3:.4f} G\n")
-            handle.write(f"Params = {params / 1000**2:.4f} M\n")
+        macs, params = profiling.get_model_macs_and_parameters(self.model, (1,3,*self.args.input_size))
+        profiling.save_macs_and_parameters(macs, params, self.args.save_path)
         return macs, params
-
+    
     def latency_test(self, warming_up_iterations=10, num_iterations=100):
         self.model.eval()
         device = self.device
@@ -402,7 +384,7 @@ class trainer:
 
         # ---------------- 保存 ----------------
         device_str = str(device).replace(":", "_")      # 避免 Windows 非法字符
-        txt_file_path = os.path.join(self.args.save_path, "..", str(self.args.device)+"_latency.txt")
+        txt_file_path = os.path.join(self.args.save_path, "..", str(self.args.device_str)+"_latency.txt")
         os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
 
         with open(txt_file_path, "w") as f:
