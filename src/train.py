@@ -5,6 +5,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from datasets import Mini_ImageNet_Datasets
 from models import get_model
+import seeding
 import os
 import argparse
 from tqdm import tqdm
@@ -15,7 +16,6 @@ import pandas as pd
 from thop import profile
 import gc
 
-import random
 import numpy as np
 
 
@@ -33,10 +33,7 @@ class trainer:
         #self.dataset_init()
     @staticmethod
     def set_seed(seed=42):
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
+        seeding.set_seed(seed)
 
     def switch_model(self,new_model_name):
         if self.device == "dml":
