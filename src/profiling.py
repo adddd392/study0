@@ -20,7 +20,6 @@ def get_model_macs_and_parameters(model, input_shape):
             torch.randn(*input_shape).to(next(model.parameters()).device),
         ),
     )
-
     return macs, params
 
 
