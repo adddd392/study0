@@ -65,47 +65,61 @@ class trainer:
         if self.model is not None:
             self.model.to(self.device)
 
+    def _build_split(self, split, csv_file, label_to_index_map, shuffle):
+        """按指定 split 建数据集与 DataLoader，返回 (dataset, loader)。
+
+        label_to_index_map 传 None 时用本 split 的 csv 自建（仅限训练集）；
+        val/test 必须传入训练集的映射，否则类别下标会与训练错位。
+        """
+        data_root = os.path.join(self.args.data_root, split)
+        dataset = Mini_ImageNet_Datasets(csv_file=csv_file,
+                                         data_root=data_root,
+                                         inputsize=self.args.input_size,
+                                         label_to_index_map=label_to_index_map)
+        loader = DataLoader(dataset,
+                            batch_size=self.args.batch_size,
+                            shuffle=shuffle,
+                            num_workers=8,
+                            pin_memory=True,
+                            persistent_workers=True)
+        return dataset, loader
+
     def dataset_init(self):
+        """建立 train/val/test 的数据集与 DataLoader，返回类别数。
+
+        三份数据共用同一个 label_to_index_map（由 train.csv 按标签首次出现
+        顺序生成），保证 val/test 的类别下标语义与训练一致。
+        """
+        if not self.args.use_train_csv and (
+            self.args.use_val_csv or self.args.use_test_csv
+        ):
+            raise ValueError(
+                "必须先加载训练集（use_train_csv=True）才能确定类别映射，"
+                "否则 val/test 会自动用各自 csv 建映射，类别下标与训练错位"
+            )
         label_to_index_map = None
         if self.args.use_train_csv:
-            self.train_dataset = Mini_ImageNet_Datasets(csv_file=self.args.train_csv,
-                                                        data_root=os.path.join(self.args.data_root, "train"),
-                                                        inputsize=self.args.input_size,
-                                                        label_to_index_map=label_to_index_map)
+            self.train_dataset, self.train_loader = self._build_split(
+                split="train",
+                csv_file=self.args.train_csv,
+                label_to_index_map=label_to_index_map,
+                shuffle=True
+            )
             label_to_index_map = self.train_dataset.get_map()
-            self.train_loader = DataLoader(self.train_dataset,
-                                           batch_size=self.args.batch_size,
-                                           shuffle=True,
-                                            num_workers=8,
-                                            pin_memory=True,
-                                            persistent_workers=True,
-                                                                                   )
         if self.args.use_val_csv:
-            self.val_dataset = Mini_ImageNet_Datasets(csv_file=self.args.val_csv,
-                                                      data_root=os.path.join(self.args.data_root, "val"),
-                                                      inputsize=self.args.input_size,
-                                                      label_to_index_map=label_to_index_map)
-            label_to_index_map = self.val_dataset.get_map()
-            self.val_loader = DataLoader(self.val_dataset,
-                                         batch_size=self.args.batch_size,
-                                         shuffle=False,
-                                         num_workers=8,
-                                        pin_memory=True,
-                                        persistent_workers=True,
-                                        )
+            self.val_dataset, self.val_loader = self._build_split(
+                split="val",
+                csv_file=self.args.val_csv,
+                label_to_index_map=label_to_index_map,
+                shuffle=False
+            )
         if self.args.use_test_csv:
-            self.test_dataset = Mini_ImageNet_Datasets(csv_file=self.args.test_csv,
-                                                       data_root=os.path.join(self.args.data_root, "test"),
-                                                       inputsize=self.args.input_size,
-                                                       label_to_index_map=label_to_index_map)
-            label_to_index_map = self.test_dataset.get_map()
-            self.test_loader = DataLoader(self.test_dataset,
-                                          batch_size=self.args.batch_size,
-                                          shuffle=False,
-                                        num_workers=8,
-                                        pin_memory=True,
-                                        persistent_workers=True,
-                                         )
+            self.test_dataset, self.test_loader = self._build_split(
+                split="test",
+                csv_file=self.args.test_csv,
+                label_to_index_map=label_to_index_map,
+                shuffle=False
+            )
         return len(label_to_index_map)
 
     def optimizer_init(self):
