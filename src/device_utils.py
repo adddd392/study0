@@ -16,4 +16,3 @@ def resolve_device(device_name):
     if device_name == "cuda":
         return torch.device("cuda")
     raise ValueError(f"Unknown device: {device_name!r}")
-
