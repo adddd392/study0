@@ -26,7 +26,7 @@ import numpy as np
 class trainer:
     def __init__(self,args):
         self.args=args
-        self.device_init()
+        self.device = device_utils.resolve_device(args.device)
         self.model = None
         #self.model_init()
         #self.criterion_init()
@@ -58,7 +58,7 @@ class trainer:
             import torch_directml
             torch_directml.empty_cache()
         self.args.device = new_device
-        self.device_init()
+        self.device = device_utils.resolve_device(self.args.device)
         self.model.to(self.device)
     
     def dataset_init(self):
@@ -108,9 +108,6 @@ class trainer:
             self.optimizer = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         else:
             raise ValueError("Wrong optimizer name")
-
-    def device_init(self):
-        self.device = device_utils.resolve_device(self.args.device)
 
     def model_init(self,num_classes):
         self.model = get_model(self.args.model_name,num_classes)
