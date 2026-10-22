@@ -377,7 +377,7 @@ class trainer:
 
         # ---------------- 保存 ----------------
         device_str = str(device).replace(":", "_")      # 避免 Windows 非法字符
-        txt_file_path = os.path.join(self.args.save_path, "..", str(self.args.device_str) + "_latency.txt")
+        txt_file_path = os.path.join(self.args.save_path, "..", str(device_str) + "_latency.txt")
         os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
 
         with open(txt_file_path, "w") as f:
