@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 
+import checkpoint
 from datasets import build_eval_transform, build_label_to_index_map
 from models import get_model
 
@@ -75,7 +76,7 @@ def find_default_checkpoint(model_name):
                     break
 
     if best_epoch:
-        candidate = os.path.join(latest, "models", f"model_epoch_{best_epoch}.pth")
+        candidate = checkpoint.checkpoint_path(latest, best_epoch)
         if os.path.isfile(candidate):
             return candidate
 
@@ -131,7 +132,7 @@ def main():
     device = torch.device(device_name)
 
     # 3) 类别数从 checkpoint 的分类头形状推断,再严格加载权重
-    state_dict = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
+    state_dict = checkpoint.load_checkpoint(args.checkpoint)
     num_classes = int(state_dict[CLASSIFIER_WEIGHT[args.model_name]].shape[0])
     model = get_model(args.model_name, num_classes)
     model.load_state_dict(state_dict, strict=True)
