@@ -5,6 +5,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from datasets import Mini_ImageNet_Datasets
 from models import get_model
+import checkpoint
 import seeding
 import device_utils
 import os
@@ -320,14 +321,13 @@ class trainer:
         return training_losses,training_Top1_accuracies,training_Top5_accuracies,validation_losses,validation_Top1_accuracies,validation_Top5_accuracies,test_loss,test_Top1_acc,test_Top5_acc
 
 
-    def save_model(self,epoch):
-        os.makedirs(os.path.join(self.args.save_path, "models"), exist_ok=True)
-        save_path=os.path.join(self.args.save_path,"models" ,f"model_epoch_{epoch}.pth")
-        torch.save(self.model.state_dict(), save_path)
-        return save_path
+    def save_model(self, epoch):
+        """保存当前模型权重，返回写入的文件路径。"""
+        return checkpoint.save_checkpoint(self.model, self.args.save_path, epoch)
 
-    def load_model(self,model_path):
-        self.model.load_state_dict(torch.load(model_path, map_location="cpu"))
+    def load_model(self, model_path):
+        """加载权重到当前模型，并迁移到当前设备。"""
+        self.model.load_state_dict(checkpoint.load_checkpoint(model_path))
         self.model.to(self.device)
 
     def get_model_flops_and_parameters(self):
