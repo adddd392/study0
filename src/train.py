@@ -50,16 +50,27 @@ class trainer:
         self.criterion_init()
         self.args.save_path=os.path.join(r"..\saved_models",self.args.model_name,str(int(time.time())))
 
-    def switch_device(self, new_device):
-        if self.device == "dml":
-            if self.model is not None:
-                self.model = None
-            gc.collect()
-            import torch_directml
+    def _release_device_resources(self):
+        """切换设备前释放旧设备占用（仅当旧设备是 DirectML）。"""
+        if self.args.device != "dml":
+            return
+        self.model = None
+        gc.collect()
+        import torch_directml
+        if hasattr(torch_directml, "empty_cache"):
             torch_directml.empty_cache()
-        self.args.device = new_device
-        self.device = device_utils.resolve_device(self.args.device)
-        self.model.to(self.device)
+
+    def switch_device(self, new_device_name):
+        """切换设备。
+
+        先解析新设备名，解析失败时对象状态保持不变（强异常保证）。
+        """
+        new_device = device_utils.resolve_device(new_device_name)
+        self._release_device_resources()
+        self.args.device = new_device_name
+        self.device = new_device
+        if self.model is not None:
+            self.model.to(self.device)
     
     def dataset_init(self):
         label_to_index_map=None
