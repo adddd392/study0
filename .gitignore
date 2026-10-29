@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .tmp_*/
+.dsh-office-*/
 .venv/
 venv/
 saved_models/
