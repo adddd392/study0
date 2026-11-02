@@ -61,7 +61,8 @@ def build_label_to_index_map(csv_file):
 
 
 class Mini_ImageNet_Datasets(Dataset):
-    def __init__(self, csv_file, data_root, inputsize=(224, 224), label_to_index_map=None):
+    def __init__(self, csv_file, data_root, inputsize=(224, 224),
+                 label_to_index_map=None):
         self.df = pd.read_csv(csv_file)
         self.data_root = data_root
         self.inputsize = inputsize
@@ -78,7 +79,8 @@ class Mini_ImageNet_Datasets(Dataset):
 
     def __getitem__(self, index):
         row = self.df.iloc[index]
-        image_path = os.path.join(self.data_root, row["label"], row["filename"])
+        image_path = os.path.join(
+            self.data_root, row["label"], row["filename"])
         image = plt.imread(image_path)
         image = self.transform(image=image)["image"]
 
@@ -96,7 +98,18 @@ class BarcodeDataset(Dataset):
     自动从 CSV 中读取类别名称，分配整数标签。
     支持绝对路径或相对路径（需指定 data_root）。
     """
-    def __init__(self, csv_file, transform=None, target_size=(224, 224), data_root=None, keep_grayscale=True,fixed_classes=['C128', 'EAN13'], cache_images=False, transform_c39=None, transform_syn=None):
+    def __init__(
+        self,
+        csv_file,
+        transform=None,
+        target_size=(224, 224),
+        data_root=None,
+        keep_grayscale=True,
+        fixed_classes=['C128', 'EAN13'],
+        cache_images=False,
+        transform_c39=None,
+        transform_syn=None,
+    ):
         """
         Args:
             csv_file (str): labels.csv 文件路径。
@@ -126,22 +139,29 @@ class BarcodeDataset(Dataset):
             # 强制使用固定类别列表（也转为大写）
             self.class_names = [name.upper() for name in fixed_classes]
             # 检查 CSV 中是否包含未知类别
-            unknown = set(self.df['label_name'].unique()) - set(self.class_names)
+            unknown = (
+                set(self.df['label_name'].unique()) - set(self.class_names)
+            )
             if unknown:
-                raise ValueError(f"CSV 包含未知类别: {unknown}，请调整 fixed_classes 或数据。")
+                raise ValueError(
+                    f"CSV 包含未知类别: {unknown}，"
+                    "请调整 fixed_classes 或数据。"
+                )
         else:
             # 原逻辑：从 CSV 提取
             self.class_names = sorted(self.df['label_name'].unique())
 
-        
-        self.class_to_idx = {name: idx for idx, name in enumerate(self.class_names)}
+        self.class_to_idx = {
+            name: idx
+            for idx, name in enumerate(self.class_names)
+        }
         self.num_classes = len(self.class_names)
 
         # 添加整数标签列
         self.df['label_id'] = self.df['label_name'].map(self.class_to_idx)
 
         # ----- 添加调试输出 -----
-        print(f"\n[BarcodeDataset] 初始化完成")
+        print("\n[BarcodeDataset] 初始化完成")
         print(f"  CSV 文件: {csv_file}")
         print(f"  类别名称 (class_names): {self.class_names}")
         print(f"  类别映射 (class_to_idx): {self.class_to_idx}")
@@ -154,10 +174,20 @@ class BarcodeDataset(Dataset):
         if cache_images:
             import time as _t
             _t0 = _t.time()
-            print(f"[BarcodeDataset] 预加载图像缓存 ({len(self.df)} 张)...", flush=True)
-            self._cache = [self._read_image(self._resolve_path(i)) for i in range(len(self.df))]
+            print(
+                f"[BarcodeDataset] 预加载图像缓存 ({len(self.df)} 张)...",
+                flush=True,
+            )
+            self._cache = [
+                self._read_image(self._resolve_path(i))
+                for i in range(len(self.df))
+            ]
             _mem = sum(g.nbytes for g in self._cache) / 1e9
-            print(f"[BarcodeDataset] 缓存完成: 内存 {_mem:.2f} GB, 耗时 {_t.time()-_t0:.0f}s", flush=True)
+            print(
+                f"[BarcodeDataset] 缓存完成: 内存 {_mem:.2f} GB, "
+                f"耗时 {_t.time()-_t0:.0f}s",
+                flush=True,
+            )
 
     def _resolve_path(self, idx):
         row = self.df.iloc[idx]
@@ -199,10 +229,8 @@ class BarcodeDataset(Dataset):
         else:
             img = self._read_image(img_path)
 
-        # 若图像小于目标尺寸，先放大（最近邻）
-        #h, w = img.shape[:2]
-        #if h < self.target_size[0] or w < self.target_size[1]:
-        #    img = cv2.resize(img, self.target_size, interpolation=cv2.INTER_NEAREST)
+        # 曾考虑"整图小于目标尺寸时先放大",已停用:
+        # 缩放统一交给 transform / default_transform 里的 A.Resize 处理
 
         # 应用增强（如果有）—— 优先级: transform_syn(合成) > transform_c39(C39) > transform
         apply_transform = self.transform
@@ -211,7 +239,10 @@ class BarcodeDataset(Dataset):
             src = str(row.get('source_domain', '')).strip().lower()
             if src == 'synthetic':
                 apply_transform = self.transform_syn
-        if apply_transform is self.transform and self.transform_c39 is not None:
+        if (
+            apply_transform is self.transform
+            and self.transform_c39 is not None
+        ):
             label_name = str(row['label_name']).strip().upper()
             if label_name == 'C39':
                 apply_transform = self.transform_c39
@@ -229,8 +260,12 @@ class BarcodeDataset(Dataset):
                     norm_mean = (0.5, 0.5, 0.5)
                     norm_std = (0.5, 0.5, 0.5)
                 default_transform = A.Compose([
-                    A.Resize(height=self.target_size[0], width=self.target_size[1],
-                            interpolation=cv2.INTER_NEAREST, p=1.0),
+                    A.Resize(
+                        height=self.target_size[0],
+                        width=self.target_size[1],
+                        interpolation=cv2.INTER_NEAREST,
+                        p=1.0,
+                    ),
                     A.Normalize(mean=norm_mean, std=norm_std),
                     ToTensorV2()
                 ])
@@ -252,6 +287,7 @@ class BarcodeDataset(Dataset):
             img = augmented['image']
 
         return img, label
+
 
 if __name__ == "__main__":
     dataset = Mini_ImageNet_Datasets(
