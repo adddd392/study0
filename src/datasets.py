@@ -362,6 +362,49 @@ if __name__ == "__main__":
 
     print("[冒烟] 通过:barber.csv 导入正常")
 
+    # ------------------------------------------------------------------
+    # 样本可视化:每个类别各取 2 张,排成一行
+    # 断言只能证明"形状和数值范围对",证明不了"标签和图像对得上";
+    # 把图和类别名摆在一起,是唯一能一眼看出来的检查方式
+    # ------------------------------------------------------------------
+    # 中文字体:matplotlib 默认字体没有汉字,不加这行标题会显示成方块
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei']
+    # 负号用 ASCII 显示,避免部分字体把负号渲染成缺字方块
+    plt.rcParams['axes.unicode_minus'] = False
+
+    # 逐类别挑前 2 个下标:按类别取样,才能同时看到两种码制
+    show_indices = []
+    for class_name in barcode_dataset.class_names:
+        # 该类别在 DataFrame 中的全部行号(行号可直接喂给 __getitem__)
+        rows = barcode_dataset.df.index[
+            barcode_dataset.df['label_name'] == class_name
+        ].tolist()
+        show_indices.extend(rows[:2])
+
+    # 列数随实际取到的张数变化,避免某一类样本不足时子图空着
+    n_show = len(show_indices)
+    fig, axes = plt.subplots(1, n_show, figsize=(3.2 * n_show, 3.4))
+    # n_show == 1 时 axes 是单个对象而不是数组,统一成可迭代
+    axes = np.atleast_1d(axes)
+    for ax, idx in zip(axes, show_indices):
+        vis_image, vis_label = barcode_dataset[idx]
+        # (1, H, W) 且归一化到 [-1, 1] -> (H, W) 且 [0, 1] 才能直接显示:
+        # squeeze 去掉通道维, x * 0.5 + 0.5 是 (x / 255 - 0.5) / 0.5 的逆变换
+        vis_image = vis_image.squeeze(0).numpy() * 0.5 + 0.5
+        # 不写死 vmin/vmax:让 matplotlib 按每张图的实际范围拉伸对比度。
+        # 条码照片普遍偏暗(归一化后常落在 0.0x~0.4),写死 0~1 会糊成一片;
+        # 真实数值范围由上面对 min/max 的断言负责,不靠这张图判断
+        ax.imshow(vis_image, cmap='gray')
+        # 标题写成「行号 + 类别名」:行号可用于回到 CSV 逐行核对
+        ax.set_title(
+            f"#{idx}  {barcode_dataset.class_names[vis_label]}",
+            fontsize=10,
+        )
+        # 关掉坐标轴:条码图的像素坐标没有信息量,留着只占地方
+        ax.axis('off')
+    fig.suptitle(f"BarcodeDataset 样本预览(共 {n_show} 张)", fontsize=12)
+    fig.tight_layout()
+
     # 放到最后:先让测试输出打印完,再弹窗显示 Mini-ImageNet 的样本,
     # 否则 plt.show() 会阻塞,看不到后面的冒烟结果
     plt.show()
