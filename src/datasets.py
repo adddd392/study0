@@ -6,12 +6,14 @@
 """
 
 import os
+import time
 
 import cv2
 import albumentations as A
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import Dataset
 
@@ -92,201 +94,459 @@ class Mini_ImageNet_Datasets(Dataset):
         return len(self.df)
 
 
+# ---------------------------------------------------------------------------
+# 条码数据集:常量、映射构建与预处理管道
+# ---------------------------------------------------------------------------
+
+# 增强类型的标记值。不直接存 transform 对象,而是在初始化时把每个样本
+# 归到下面三类之一,__getitem__ 里只需要一次整数比较,不必再读 DataFrame。
+AUGMENT_NONE = 0   # 走通用 transform
+AUGMENT_C39 = 1    # 走 transform_c39
+AUGMENT_SYN = 2    # 走 transform_syn(优先级最高)
+
+
+def build_barcode_preprocess_pipeline(target_size, keep_grayscale=True,
+                                      interpolation=cv2.INTER_AREA):
+    """构建条码数据集的基础预处理管道:Resize -> Normalize -> ToTensorV2。
+
+    这条管道是「必经之路」:无论有没有数据增强,最后都由它把图像变成
+    形状固定、取值固定的张量。因此增强管道不必各自再带 ToTensorV2。
+
+    参数:
+        target_size: (H, W) 输出尺寸。
+        keep_grayscale: True 时按单通道归一化,否则按三通道。
+        interpolation: 缩放插值方式。默认 INTER_AREA ——
+            条码靠「条空宽窄比例」区分,缩小图像时 INTER_NEAREST 会丢掉
+            整条黑边(实测 74 个条空边界只剩 53 个),INTER_AREA 是
+            缩小场景的正确选择。
+    返回:
+        albumentations.Compose,调用 transform(image=ndarray)['image']。
+    """
+    # 归一化常量必须和通道数匹配:灰度 1 元组,彩色 3 元组
+    if keep_grayscale:
+        norm_mean, norm_std = (0.5,), (0.5,)
+    else:
+        norm_mean, norm_std = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
+    return A.Compose([
+        # 统一尺寸:不 Resize 的话每张图尺寸都不同,DataLoader 无法拼 batch
+        A.Resize(
+            height=target_size[0],
+            width=target_size[1],
+            interpolation=interpolation,
+            p=1.0,
+        ),
+        # 0~255 -> [-1, 1]
+        A.Normalize(mean=norm_mean, std=norm_std),
+        # HWC(float32) -> CHW(torch.Tensor)
+        ToTensorV2(),
+    ])
+
+
+def build_barcode_class_mapping(label_names, fixed_classes=None):
+    """构建 (class_names, class_to_idx),并拒绝 CSV 里的未知类别。
+
+    为什么要有固定类别:训练与推理必须用同一套下标语义。若每次按 CSV
+    内容排序生成,换一份 CSV 就可能让 C128 从 0 变成 1,预测结果整体错位。
+    因此生产环境应始终传 fixed_classes。
+
+    参数:
+        label_names: CSV 中出现过的类别名。会先统一 strip + 大写,
+            因此 'c128 ' 和 'C128' 视为同一类。
+        fixed_classes: 固定类别次序(同样会归一化);None 表示按内容排序生成。
+    返回:
+        (class_names, class_to_idx),形如
+        (['C128', 'EAN13'], {'C128': 0, 'EAN13': 1})
+    异常:
+        ValueError: CSV 中出现了 fixed_classes 之外的类别。
+    """
+    # 两侧都归一化,调用方就不必自己记得先转大写
+    normalized = {str(name).strip().upper() for name in label_names}
+    if fixed_classes is None:
+        # 兜底路径:没有给定次序时才按内容排序
+        class_names = sorted(normalized)
+    else:
+        # 统一转大写,避免 fixed_classes 里写 'c128' 就匹配不上
+        class_names = [str(name).strip().upper() for name in fixed_classes]
+        unknown = normalized - set(class_names)
+        if unknown:
+            # 必须报错而不是忽略:被忽略的样本会让标签变 NaN,
+            # 进而让 CrossEntropyLoss 收到浮点标签并在训练中段才崩
+            raise ValueError(
+                f"CSV 包含未知类别: {sorted(unknown)},"
+                f"当前 fixed_classes={class_names}。"
+                "请把新类别加入 fixed_classes,或确认数据是否混入了别的码制。"
+            )
+    class_to_idx = {
+        name: index
+        for index, name in enumerate(class_names)
+    }
+    return class_names, class_to_idx
+
+
 class BarcodeDataset(Dataset):
+    """条码码制分类数据集:CSV -> (图像张量, 整数标签)。
+
+    CSV 必需列:
+        image_path  : 图像路径。绝对路径直接使用;相对路径配合 data_root。
+        label_name  : 类别名(码制),内部统一转成大写再映射成整数。
+    CSV 可选列:
+        source_domain : 取值 'synthetic' 时该样本走 transform_syn。
+
+    设计要点:
+        1. 基础管道(Resize+Normalize+ToTensorV2)恒执行,且只在初始化时
+           构建一次。因此输出形状永远等于 target_size,与是否提供 transform
+           无关 —— 忘记传 transform 不会再得到尺寸各异的张量。
+        2. 增强管道(transform / transform_c39 / transform_syn)只负责改像素,
+           不要再包含 ToTensorV2;误包含会立刻抛 TypeError 并指明原因。
+        3. 路径、标签、增强类型在初始化时全部预解析成数组,
+           __getitem__ 里不再有任何 pandas 开销(旧实现每样本 2 次 iloc)。
+
+    用法:
+        dataset = BarcodeDataset(
+            csv_file="dataset/barber.csv",
+            target_size=(224, 224),
+            fixed_classes=("C128", "EAN13"),
+        )
+        loader = DataLoader(
+            dataset,
+            batch_size=32,
+            num_workers=4,
+            worker_init_fn=BarcodeDataset.worker_init_fn,
+        )
     """
-    条码数据集类，支持多种码制分类。
-    自动从 CSV 中读取类别名称，分配整数标签。
-    支持绝对路径或相对路径（需指定 data_root）。
-    """
-    def __init__(
-        self,
-        csv_file,
-        transform=None,
-        target_size=(224, 224),
-        data_root=None,
-        keep_grayscale=True,
-        fixed_classes=['C128', 'EAN13'],
-        cache_images=False,
-        transform_c39=None,
-        transform_syn=None,
-    ):
+
+    # 增强失败的容忍上限:超过就直接报错。
+    # 为什么要有上限:旧实现逐张静默降级,transform 写错时训练照跑、
+    # loss 照降,但预处理分布已经变了,唯一的线索是几千行警告刷屏。
+    MAX_TRANSFORM_FAILURES = 20
+
+    def __init__(self, csv_file, transform=None, target_size=(224, 224),
+                 data_root=None, keep_grayscale=True,
+                 fixed_classes=("C128", "EAN13"), cache_images=False,
+                 transform_c39=None, transform_syn=None,
+                 interpolation=cv2.INTER_AREA, verbose=True):
+        """初始化数据集。
+
+        参数:
+            csv_file: CSV 路径。
+            transform: 通用数据增强管道(只改像素,不含 ToTensorV2)。
+            target_size: (H, W) 输出尺寸,由基础管道负责实现。
+            data_root: 图像根目录;CSV 里是相对路径时用它拼接。
+            keep_grayscale: True 输出单通道,False 输出三通道 RGB。
+            fixed_classes: 固定类别次序。默认值用 tuple 而不是 list ——
+                list 作为默认参数会在所有实例间共享,一旦有人 append
+                就会污染其它实例。
+            cache_images: 是否把所有原图解码后常驻内存(省每 epoch 的解码)。
+            transform_c39: C39 专属增强。仅当 fixed_classes 含 'C39'
+                时才可能生效,否则 CSV 里的 C39 样本会先被判为未知类别。
+            transform_syn: 合成数据专属增强,优先级高于 transform_c39。
+            interpolation: 基础管道缩放插值方式,默认 INTER_AREA。
+            verbose: 是否打印数据集概况。
         """
-        Args:
-            csv_file (str): labels.csv 文件路径。
-            transform (albumentations.Compose, optional): 数据增强流水线。
-            target_size (tuple): 输出图像尺寸 (height, width)。
-            data_root (str, optional): 图像根目录，当 CSV 中为相对路径时拼接该路径。
-            cache_images (bool): 是否预加载全部图像到内存缓存 (省每 epoch 的 imread IO/解码)。
-            transform_c39 (albumentations.Compose, optional): C39 专属增强流水线。
-                当样本的 label_name == 'C39' 时使用该流水线；为 None 时回退到 transform。
-            transform_syn (albumentations.Compose, optional): 合成数据专属增强流水线。
-                当样本的 source_domain == 'synthetic' 时使用该流水线（优先级最高）；
-                为 None 时回退到 transform_c39 / transform。
-        """
-        self.df = pd.read_csv(csv_file)
+        self.csv_file = csv_file
+        self.target_size = tuple(target_size)
+        self.data_root = data_root
+        self.keep_grayscale = keep_grayscale
+        self.verbose = verbose
+
+        # ---- 增强管道:只改像素,基础管道会在最后统一归一化 ----
         self.transform = transform
         self.transform_c39 = transform_c39
         self.transform_syn = transform_syn
-        self.target_size = target_size
-        self.data_root = data_root  # 新增
-        self.keep_grayscale = keep_grayscale
 
-        # ----- 关键修复：先将标签转为大写 -----
-        self.df['label_name'] = self.df['label_name'].str.upper()
+        # ---- 读 CSV 并统一标签书写 ----
+        self.df = pd.read_csv(csv_file)
+        # strip 去掉首尾空白,upper 统一大小写:
+        # 否则 'c128 ' 和 'C128' 会被当成两个不同的类
+        self.df['label_name'] = (
+            self.df['label_name'].astype(str).str.strip().str.upper()
+        )
 
-        # ----- 处理固定类别 -----
-        if fixed_classes is not None:
-            # 强制使用固定类别列表（也转为大写）
-            self.class_names = [name.upper() for name in fixed_classes]
-            # 检查 CSV 中是否包含未知类别
-            unknown = (
-                set(self.df['label_name'].unique()) - set(self.class_names)
-            )
-            if unknown:
-                raise ValueError(
-                    f"CSV 包含未知类别: {unknown}，"
-                    "请调整 fixed_classes 或数据。"
-                )
-        else:
-            # 原逻辑：从 CSV 提取
-            self.class_names = sorted(self.df['label_name'].unique())
-
-        self.class_to_idx = {
-            name: idx
-            for idx, name in enumerate(self.class_names)
-        }
+        # ---- 类别映射 ----
+        self.class_names, self.class_to_idx = build_barcode_class_mapping(
+            label_names=self.df['label_name'].unique(),
+            fixed_classes=fixed_classes,
+        )
         self.num_classes = len(self.class_names)
+        # 把整数标签写回 df:外部可按类别过滤,也可用 df['label_id'] 统计
+        self.df['label_id'] = (
+            self.df['label_name'].map(self.class_to_idx).astype('int64')
+        )
 
-        # 添加整数标签列
-        self.df['label_id'] = self.df['label_name'].map(self.class_to_idx)
+        # ---- 基础预处理管道 ----
+        # 只建一次:旧实现每取一个样本都重新 new 一个 A.Compose,
+        # 6527 张图乘每个 epoch 都是白白的对象分配开销
+        self.base_pipeline = build_barcode_preprocess_pipeline(
+            target_size=self.target_size,
+            keep_grayscale=keep_grayscale,
+            interpolation=interpolation,
+        )
 
-        # ----- 添加调试输出 -----
-        print("\n[BarcodeDataset] 初始化完成")
-        print(f"  CSV 文件: {csv_file}")
-        print(f"  类别名称 (class_names): {self.class_names}")
-        print(f"  类别映射 (class_to_idx): {self.class_to_idx}")
-        print(f"  每个类别的样本数:\n{self.df['label_name'].value_counts()}")
-        print(f"  总样本数: {len(self.df)}\n")
+        # ---- 预解析:让 __getitem__ 彻底不碰 pandas ----
+        self._image_paths = self._resolve_all_paths()
+        self._labels = self.df['label_id'].to_numpy()
+        self._augment_tags = self._resolve_augment_tags()
 
-        # ----- 可选: 预加载图像缓存 -----
+        # ---- 可选的图像缓存 ----
         self.cache_images = cache_images
         self._cache = None
+        self._transform_failures = 0
+        if verbose:
+            self._print_summary()
         if cache_images:
-            import time as _t
-            _t0 = _t.time()
-            print(
-                f"[BarcodeDataset] 预加载图像缓存 ({len(self.df)} 张)...",
-                flush=True,
-            )
-            self._cache = [
-                self._read_image(self._resolve_path(i))
-                for i in range(len(self.df))
-            ]
-            _mem = sum(g.nbytes for g in self._cache) / 1e9
-            print(
-                f"[BarcodeDataset] 缓存完成: 内存 {_mem:.2f} GB, "
-                f"耗时 {_t.time()-_t0:.0f}s",
-                flush=True,
-            )
+            self._preload_images()
 
-    def _resolve_path(self, idx):
-        row = self.df.iloc[idx]
-        img_path = row['image_path']
-        if self.data_root is not None and not os.path.isabs(img_path):
-            img_path = os.path.join(self.data_root, img_path)
-        return img_path
+    # -- 初始化期的辅助方法 -------------------------------------------------
 
-    def _read_image(self, img_path):
-        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+    def _resolve_all_paths(self):
+        """把 CSV 的 image_path 一次性解析成可直接交给 cv2.imread 的列表。
+
+        绝对路径原样返回;相对路径用 data_root 拼接(data_root 为 None 时
+        保留原样,由 cv2 相对当前工作目录解析)。
+        """
+        paths = []
+        for raw_path in self.df['image_path']:
+            # CSV 读进来可能是 numpy.str_,且可能带首尾空格
+            path = str(raw_path).strip()
+            if self.data_root is not None and not os.path.isabs(path):
+                path = os.path.join(str(self.data_root), path)
+            paths.append(path)
+        return paths
+
+    def _resolve_augment_tags(self):
+        """预先算出每个样本该用哪条增强管道,返回 int8 数组。
+
+        优先级:合成数据(transform_syn) > C39(transform_c39) > 通用。
+        未提供对应管道时,该类样本一律回落到 AUGMENT_NONE。
+        """
+        tags = np.full(len(self._image_paths), AUGMENT_NONE, dtype=np.int8)
+        # 合成数据优先级最高,先打标
+        if self.transform_syn is not None and (
+            'source_domain' in self.df.columns
+        ):
+            # 统一成小写再比较,避免 'Synthetic' / ' synthetic ' 漏标
+            domain = (
+                self.df['source_domain'].astype(str).str.strip().str.lower()
+            )
+            tags[(domain == 'synthetic').to_numpy()] = AUGMENT_SYN
+        # C39 只覆盖还没被标成合成数据的样本
+        if self.transform_c39 is not None:
+            is_c39 = (self.df['label_name'] == 'C39').to_numpy()
+            tags[is_c39 & (tags == AUGMENT_NONE)] = AUGMENT_C39
+        return tags
+
+    def _print_summary(self):
+        """打印数据集概况:类别、映射、各类样本数,便于训练前核对。"""
+        counts = self.df['label_name'].value_counts()
+        lines = [
+            f"\n[BarcodeDataset] {len(self.df)} 张,{self.num_classes} 类",
+            f"  CSV: {self.csv_file}",
+            f"  class_names: {self.class_names}",
+            f"  class_to_idx: {self.class_to_idx}",
+            "  各类样本数:",
+        ]
+        for name in self.class_names:
+            lines.append(f"    {name}: {int(counts.get(name, 0))}")
+        print("\n".join(lines))
+
+    def _preload_images(self):
+        """把所有原图解码一次并常驻内存,省掉每个 epoch 的解码开销。
+
+        注意:缓存的是「未缩放原图」,内存占用取决于原图尺寸。
+        本数据集实测约 0.24 MB/张,6527 张约 1.6 GB,开启前请先估算。
+        """
+        start = time.time()
+        if self.verbose:
+            print(f"[BarcodeDataset] 预加载 {len(self._image_paths)} 张...")
+        # 顺序必须与 _image_paths 一致,__getitem__ 才能直接用下标命中
+        self._cache = [self._read_image(p) for p in self._image_paths]
+        total_gb = sum(image.nbytes for image in self._cache) / 1e9
+        if self.verbose:
+            print(f"[BarcodeDataset] 缓存完成: {total_gb:.2f} GB,"
+                  f" 耗时 {time.time() - start:.0f}s")
+
+    # -- 单样本读取 ---------------------------------------------------------
+
+    @staticmethod
+    def _imread_any_path(img_path):
+        """读图,兼容含中文/空格的路径。
+
+        为什么不用 cv2.imread:它在 Windows 上走窄字符 API,路径里只要
+        出现中文就静默返回 None(本项目仓库路径就带中文,实测必踩)。
+        改用「numpy 读字节 + cv2.imdecode」,把路径解析交给 Python 的文件层,
+        OpenCV 只负责解码内存中的字节,不再碰路径。
+
+        异常:
+            FileNotFoundError: 文件不存在、为空或无法解码。
+        """
+        try:
+            buffer = np.fromfile(img_path, dtype=np.uint8)
+        except OSError as exc:
+            # 文件不存在、是目录、无权限都归到这里
+            raise FileNotFoundError(f"图像无法读取: {img_path}") from exc
+        if buffer.size == 0:
+            raise FileNotFoundError(f"图像为空文件: {img_path}")
+        # IMREAD_UNCHANGED 保留原始通道数,由调用方决定怎么转换
+        img = cv2.imdecode(buffer, cv2.IMREAD_UNCHANGED)
         if img is None:
-            raise FileNotFoundError(f"图像不存在: {img_path}")
-        if self.keep_grayscale:
-            if len(img.shape) == 3 and img.shape[2] == 3:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            elif len(img.shape) == 3 and img.shape[2] == 4:
-                img = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
-        else:
-            if len(img.shape) == 2:
-                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-            elif img.shape[2] == 3:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            elif img.shape[2] == 4:
-                img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
-            else:
-                raise ValueError(f"不支持的图像通道数: {img.shape}")
+            raise FileNotFoundError(f"图像无法解码(格式不支持?): {img_path}")
         return img
 
+    def _read_image(self, img_path):
+        """读一张图,并按 keep_grayscale 统一通道数。
+
+        返回:
+            keep_grayscale=True  -> (H, W) 单通道 ndarray
+            keep_grayscale=False -> (H, W, 3) RGB ndarray
+        异常:
+            FileNotFoundError: 路径不存在或文件无法解码。
+        """
+        img = self._imread_any_path(img_path)
+        channels = 1 if img.ndim == 2 else img.shape[2]
+        if self.keep_grayscale:
+            # 彩色/带 alpha 的一律转灰度;本来就是灰度的原样返回
+            if channels == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            elif channels == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+        else:
+            # 统一成 RGB 三通道:OpenCV 默认是 BGR,不转换会让红蓝互换
+            if img.ndim == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+            elif channels == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            elif channels == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+            else:
+                raise ValueError(f"不支持的图像通道数: {channels} ({img_path})")
+        return img
+
+    def _select_augment(self, idx):
+        """返回该样本应使用的增强管道;没有则为 None。"""
+        tag = int(self._augment_tags[idx])
+        if tag == AUGMENT_SYN:
+            return self.transform_syn
+        if tag == AUGMENT_C39:
+            return self.transform_c39
+        return self.transform
+
+    def _apply_augment(self, img, idx):
+        """对图像应用该样本选中的增强管道,返回值仍是 ndarray。
+
+        异常处理策略:
+            - 前 MAX_TRANSFORM_FAILURES 次:降级为基础预处理,只打一条警告;
+            - 超过上限:抛 RuntimeError,让错误在第一批 batch 内暴露,
+              而不是让训练带着错误的预处理跑完整个 epoch。
+        """
+        augment = self._select_augment(idx)
+        if augment is None:
+            # 没有增强,直接交给基础管道
+            return img
+        try:
+            augmented = augment(image=img)['image']
+        except Exception as exc:
+            # 捕获面故意放宽:第三方增强库的异常类型不可控,
+            # 但用「次数上限 + 首条警告」防止它变成静默降级
+            self._handle_augment_failure(exc, idx)
+            return img
+        # 增强后必须还是 ndarray;拿到张量说明调用方把 ToTensorV2 也塞进来了。
+        # 在 try 之外抛,避免被上面的 except 吞掉
+        if isinstance(augmented, torch.Tensor):
+            raise TypeError(
+                "transform / transform_c39 / transform_syn 不应包含 "
+                "ToTensorV2:数据集会在增强之后统一执行 "
+                "Resize -> Normalize -> ToTensorV2。"
+                f" 出错样本: {self._image_paths[idx]}"
+            )
+        return augmented
+
+    def _handle_augment_failure(self, exc, idx):
+        """统计并处理增强失败:超限报错,否则只报一次警。"""
+        self._transform_failures += 1
+        if self._transform_failures > self.MAX_TRANSFORM_FAILURES:
+            raise RuntimeError(
+                f"增强管道失败超过 {self.MAX_TRANSFORM_FAILURES} 次,"
+                "已停止以避免用错误的预处理继续训练。"
+                f"最近一次样本: {self._image_paths[idx]}"
+            ) from exc
+        if self._transform_failures == 1:
+            print(
+                f"[BarcodeDataset] 增强失败,已降级为基础预处理:"
+                f"{self._image_paths[idx]} ({exc})"
+            )
+        elif self._transform_failures == self.MAX_TRANSFORM_FAILURES:
+            print(
+                f"[BarcodeDataset] 增强失败已达 "
+                f"{self.MAX_TRANSFORM_FAILURES} 次,再失败将直接报错"
+            )
+
+    # -- Dataset 接口 -------------------------------------------------------
+
     def __len__(self):
-        return len(self.df)
+        """样本总数。"""
+        return len(self._image_paths)
 
     def __getitem__(self, idx):
-        img_path = self._resolve_path(idx)
-        label = self.df.iloc[idx]['label_id']
+        """返回 (image, label)。
 
-        # 读取图像（缓存或磁盘）
+        image: float32 张量,(1, H, W) 或 (3, H, W),H/W 等于 target_size。
+        label: python int,取值 [0, num_classes)。
+        """
+        # pandas 支持负下标,但下面的 list 缓存不支持,先统一成正索引
+        if idx < 0:
+            idx += len(self._image_paths)
+        img_path = self._image_paths[idx]
+
+        # 命中缓存就不必再解码,这是 cache_images 唯一的意义
         if self.cache_images:
             img = self._cache[idx]
         else:
             img = self._read_image(img_path)
 
-        # 曾考虑"整图小于目标尺寸时先放大",已停用:
-        # 缩放统一交给 transform / default_transform 里的 A.Resize 处理
+        # 1) 该样本专属的增强(可能为无)
+        img = self._apply_augment(img, idx)
 
-        # 应用增强（如果有）—— 优先级: transform_syn(合成) > transform_c39(C39) > transform
-        apply_transform = self.transform
-        row = self.df.iloc[idx]
-        if self.transform_syn is not None:
-            src = str(row.get('source_domain', '')).strip().lower()
-            if src == 'synthetic':
-                apply_transform = self.transform_syn
-        if (
-            apply_transform is self.transform
-            and self.transform_c39 is not None
-        ):
-            label_name = str(row['label_name']).strip().upper()
-            if label_name == 'C39':
-                apply_transform = self.transform_c39
-        if apply_transform:
-            try:
-                augmented = apply_transform(image=img)
-                img = augmented['image']
-            except Exception as e:
-                print(f"警告: 增强失败 ({e})，将使用默认预处理。图像: {img_path}")
-                # 注意：默认归一化需要匹配通道数
-                if self.keep_grayscale:
-                    norm_mean = (0.5,)
-                    norm_std = (0.5,)
-                else:
-                    norm_mean = (0.5, 0.5, 0.5)
-                    norm_std = (0.5, 0.5, 0.5)
-                default_transform = A.Compose([
-                    A.Resize(
-                        height=self.target_size[0],
-                        width=self.target_size[1],
-                        interpolation=cv2.INTER_NEAREST,
-                        p=1.0,
-                    ),
-                    A.Normalize(mean=norm_mean, std=norm_std),
-                    ToTensorV2()
-                ])
-                augmented = default_transform(image=img)
-                img = augmented['image']
-        else:
-            # 无增强时的默认处理
-            if self.keep_grayscale:
-                norm_mean = (0.5,)
-                norm_std = (0.5,)
-            else:
-                norm_mean = (0.5, 0.5, 0.5)
-                norm_std = (0.5, 0.5, 0.5)
-            default_transform = A.Compose([
-                A.Normalize(mean=norm_mean, std=norm_std),
-                ToTensorV2()
-            ])
-            augmented = default_transform(image=img)
-            img = augmented['image']
+        # 2) 基础管道:恒执行,所以输出形状只由 target_size 决定
+        tensor = self.base_pipeline(image=img)['image']
 
-        return img, label
+        # 3) 标签从预解析的数组取,避免每样本一次 pandas 索引
+        return tensor, int(self._labels[idx])
+
+    # -- 工具方法 -----------------------------------------------------------
+
+    def validate_files(self, limit=None):
+        """检查图像是否都在磁盘上,返回缺失/无法读取的路径列表。
+
+        CSV 里存的是绝对路径,数据目录一旦搬家,错误要等 __getitem__
+        被调用才暴露。训练前跑一次本方法可以提前发现,避免跑到一半崩。
+        """
+        paths = self._image_paths if limit is None else (
+            self._image_paths[:limit]
+        )
+        return [path for path in paths if not os.path.isfile(path)]
+
+    def get_map(self):
+        """返回 class_to_idx,便于与推理端的映射对齐。"""
+        return self.class_to_idx
+
+    @staticmethod
+    def worker_init_fn(worker_id):
+        """DataLoader 的 worker_init_fn:关掉 cv2 自带的线程池。
+
+        num_workers > 0 时,每个 worker 会自己再开一套 OpenCV 线程,
+        和 PyTorch 抢 CPU 核,典型表现是「加了 worker 反而更慢」。
+        用法:DataLoader(..., worker_init_fn=BarcodeDataset.worker_init_fn)
+        """
+        cv2.setNumThreads(0)
+
+    def __repr__(self):
+        """调试用的简短描述,不打印逐类统计。"""
+        return (
+            f"BarcodeDataset(samples={len(self)},"
+            f" classes={self.num_classes},"
+            f" target_size={self.target_size},"
+            f" keep_grayscale={self.keep_grayscale})"
+        )
 
 
 if __name__ == "__main__":
@@ -312,10 +572,13 @@ if __name__ == "__main__":
 
     barcode_dataset = BarcodeDataset(
         csv_file=barcode_csv,
-        # 复用模块级预处理管道,保证与训练/推理时同一套口径
-        # (Resize -> Normalize -> ToTensorV2),不会出现分布漂移
-        transform=build_eval_transform(inputsize=(224, 224)),
+        target_size=(224, 224),
+        # 不需要再传 transform:Resize -> Normalize -> ToTensorV2 这条基础
+        # 管道在数据集内部恒执行,输出形状只由 target_size 决定
     )
+    # 训练前先确认图像都在盘上:CSV 存的是绝对路径,目录一搬就会抛错
+    missing = barcode_dataset.validate_files()
+    print(f"[冒烟] 缺失图像 = {len(missing)} 个")
 
     # 样本数必须等于 CSV 的行数,否则说明 CSV 解析或列名有问题
     print(f"[冒烟] 样本数 = {len(barcode_dataset)}")
