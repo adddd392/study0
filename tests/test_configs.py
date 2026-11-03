@@ -214,6 +214,29 @@ def case_trainer_integration() -> None:
     print("配置 -> Trainer 集成: OK")
 
 
+def case_default_save_path_absolute() -> None:
+    """自动生成的产物目录必须是绝对路径，不能随启动目录漂移。"""
+    config = build_config("barcode_smoke")
+    trainer = Trainer(config.to_namespace())
+    save_path = trainer.args.save_path
+    assert os.path.isabs(save_path), (
+        f"save_path 应为绝对路径，实际 {save_path!r}；"
+        "相对路径会让同一份配置换个启动目录就写到两个地方"
+    )
+    assert "barcode" in save_path, f"产物目录应含数据集名: {save_path}"
+    assert "MobileNetV3-Large" in save_path, f"产物目录应含模型名: {save_path}"
+
+    # 显式指定时必须原样保留，不能被自动生成覆盖
+    explicit = os.path.join(_SRC, "..", ".tmp_tests", "explicit")
+    trainer = Trainer(
+        build_config("barcode_smoke", save_path=explicit).to_namespace()
+    )
+    assert trainer.args.save_path == explicit, (
+        f"显式 save_path 被改写了: {trainer.args.save_path!r}"
+    )
+    print("产物目录为绝对路径: OK")
+
+
 def case_describe_and_table() -> None:
     """describe() 与 config_table() 供实验记录/报告直接使用。"""
     config = build_config("barcode_mobilenet_128")
@@ -238,6 +261,7 @@ def main() -> int:
     case_validate_rejects_bad_values()
     case_missing_csv_rejected()
     case_trainer_integration()
+    case_default_save_path_absolute()
     case_describe_and_table()
     print("全部通过")
     return 0

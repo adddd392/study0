@@ -3,7 +3,12 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from dataset_factory import available_datasets, build_split
-from configs import DEFAULT_CONFIG, available_configs, build_config
+from configs import (
+    DEFAULT_CONFIG,
+    SAVED_ROOT,
+    available_configs,
+    build_config,
+)
 from models import get_model
 import profiling
 import checkpoint
@@ -39,14 +44,18 @@ class Trainer:
         # self.dataset_init()
 
     def default_save_path(self):
-        """实验产物目录: saved_models/<数据集>/<模型>/<时间戳>。
+        """实验产物目录: saved_models/<数据集>/<模型>/<时间戳>（绝对路径）。
 
         按数据集分层是必须的:条码模型和 ImageNet 模型混在同一个
         saved_models/<模型>/ 下时，推理端的"自动找最近一次权重"会拿到
         另一个数据集的权重，类别数都不一样，还不会报错。
+
+        用 SAVED_ROOT（绝对路径）而不是 r"..\\saved_models"：后者相对当前
+        工作目录，从 src/ 启动落到 study\\saved_models，从仓库根启动落到
+        代码\\saved_models，同一份配置换个目录启动就写到两个地方。
         """
         return os.path.join(
-            r"..\saved_models",
+            SAVED_ROOT,
             self.dataset_name,
             getattr(self.args, "model_name", "unknown"),
             str(int(time.time())),
@@ -379,7 +388,14 @@ class Trainer:
         profiling.save_macs_and_parameters(macs, params, self.args.save_path)
         return macs, params
 
-    def latency_test(self, warming_up_iterations=10, num_iterations=100):
+    def latency_test(self, warming_up_iterations=10, num_iterations=100,
+                     save_report=True):
+        """测单张推理延迟，返回平均延迟（毫秒）。
+
+        参数:
+            save_report: 是否把结果写成 <模型目录>/<设备>_latency.txt。
+                纯性能对比（不做训练）时传 False，这样不需要产物目录可写。
+        """
         self.model.eval()
         device = self.device
         is_cuda = device.type == "cuda"
@@ -388,9 +404,13 @@ class Trainer:
             if is_cuda:
                 torch.cuda.synchronize()
 
-        # 固定输入
+        # 固定输入。通道数跟模型走（灰度模型是 1），写死 3 会让灰度模型在这里
+        # 直接 RuntimeError：weight 是 [16,1,3,3] 而输入是 [1,3,128,128]。
         input_tensor = torch.randn(
-            1, 3, self.args.input_size[0], self.args.input_size[1]
+            1,
+            self.in_channels,
+            self.args.input_size[0],
+            self.args.input_size[1],
         ).to(device)
 
         with torch.no_grad():
@@ -424,18 +444,23 @@ class Trainer:
         p95_lat = float(np.percentile(latencies, 95))
 
         # ---------------- 保存 ----------------
-        device_str = str(device).replace(":", "_")      # 避免 Windows 非法字符
-        txt_file_path = os.path.join(self.args.save_path, "..", str(device_str) + "_latency.txt")
-        os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
+        if save_report:
+            # 注意写的是 save_path 的上一级：同一模型的所有运行共用一个
+            # <设备>_latency.txt，后一次会覆盖前一次
+            device_str = str(device).replace(":", "_")   # 避免 Windows 非法字符
+            txt_file_path = os.path.join(
+                self.args.save_path, "..", str(device_str) + "_latency.txt"
+            )
+            os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
 
-        with open(txt_file_path, "w") as f:
-            f.write(f"Device          : {device}\n")
-            f.write(f"Warmup iters    : {warming_up_iterations}\n")
-            f.write(f"Test iters      : {num_iterations}\n")
-            f.write(f"Average Latency : {mean_lat:.6f} ms\n")
-            f.write(f"Median  Latency : {median_lat:.6f} ms\n")
-            f.write(f"Std     Latency : {std_lat:.6f} ms\n")
-            f.write(f"P95     Latency : {p95_lat:.6f} ms\n")
+            with open(txt_file_path, "w", encoding="utf-8") as f:
+                f.write(f"Device          : {device}\n")
+                f.write(f"Warmup iters    : {warming_up_iterations}\n")
+                f.write(f"Test iters      : {num_iterations}\n")
+                f.write(f"Average Latency : {mean_lat:.6f} ms\n")
+                f.write(f"Median  Latency : {median_lat:.6f} ms\n")
+                f.write(f"Std     Latency : {std_lat:.6f} ms\n")
+                f.write(f"P95     Latency : {p95_lat:.6f} ms\n")
 
         # 返回平均值，保持和你原来接口一致
         return mean_lat

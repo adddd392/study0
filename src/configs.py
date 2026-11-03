@@ -48,11 +48,20 @@ from dataset_factory import available_datasets
 # ---------------------------------------------------------------------------
 # 以本文件位置为基准算绝对路径，这样从任何工作目录启动都能找到数据。
 # 重构前用 r"..\data\..." 是相对**当前工作目录**的，只有 cd 到 src/ 才正确。
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _MINI_ROOT = os.path.abspath(
-    os.path.join(_PROJECT_ROOT, "..", "data", "Mini-ImageNet-Dataset")
+    os.path.join(PROJECT_ROOT, "..", "data", "Mini-ImageNet-Dataset")
 )
-_BARCODE_DIR = os.path.join(_PROJECT_ROOT, "dataset")
+_BARCODE_DIR = os.path.join(PROJECT_ROOT, "dataset")
+SAVED_ROOT = os.path.abspath(
+    os.path.join(PROJECT_ROOT, "..", "saved_models")
+)
+r"""训练产物的根目录，放在仓库外（和 data 同级），避免大文件进 git。
+
+必须是绝对路径：Trainer 的 default_save_path() 曾经用 r"..\saved_models"，
+从 src/ 启动落到 study\saved_models，从仓库根启动落到 代码\saved_models，
+同一份配置换个启动目录就写到两个地方去了。
+"""
 
 
 @dataclass(frozen=True)
