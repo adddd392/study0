@@ -53,17 +53,20 @@ pip install -r requirements.txt
 `barber.csv` 的 `image_path` 列是绝对路径（作者本机 `D:\...`）。换机器后
 需要重跑 `split_barcode.py`，或自行改写该列再切分。
 
-单次实验的产物：
+单次实验的产物（每次实验一个时间戳目录，互不覆盖）：
 
 ```
 ..\saved_models\barcode\MobileNetV3-Large\
-├── macs_and_parameters.txt     模型复杂度（模型级共享，会被覆盖）
-├── cpu_latency.txt             推理延迟（模型级共享，会被覆盖）
-└── 1762230000\                 每次实验一个时间戳目录
-    ├── results.txt             指标 + 完整配置记录（含配置名）
+└── 1762230000\                 时间戳目录
+    ├── results.txt             指标 + 分类报告 + 完整配置记录（含配置名）
+    ├── macs_and_parameters.txt 模型复杂度（benchmark 或显式调用时生成）
+    ├── cpu_latency.txt         推理延迟（同上）
     ├── curves\*.png            损失/准确率曲线
     └── models\model_epoch_N.pth
 ```
+
+`results.txt` 里的分类报告包含混淆矩阵、每类召回/精确率/F1、balanced accuracy
+和 macro F1。2 类任务上务必看 balanced accuracy，不要只看总体准确率。
 
 条码切分全部按**源图键**分组：`<源图键>_regionNN.png` 这类来自同一张照片的裁剪
 永远落在同一个 split 里。`split_barcode.verify_split()` 会校验三份数据无交叉。
@@ -164,7 +167,7 @@ python tests\test_configs.py
 ## 9. 已知限制
 
 1. **2 类任务上 Top-5 没有意义**：`min(5, num_classes)` 会压成 Top-2，恒等于 100%。
-   看条码结果请看 Top-1，后续应补每类召回与混淆矩阵。
+   看条码结果请以 `results.txt` 里的分类报告为准（balanced accuracy + 每类召回）。
 2. **类别与成像尺寸强相关**（重要）：条码数据集中 C128 的长宽比中位数 0.25、
    EAN13 是 0.50，只用 `log(高/宽)` 一个数值就能在测试集拿到 **90.4%**，
    两个尺寸特征的线性分类器是 **91.2%**（多数类基线 76.9%）。
@@ -174,5 +177,6 @@ python tests\test_configs.py
 4. **数据增强未接**：`BarcodeDataset` 的 `transform` 参数已就绪但传的是 `None`。
 5. **DirectML 更慢**：本机实测 MobileNetV3@128 是 CPU 的 3 倍慢，ResNet-50@224 直接失败。
    `--device` 默认已改为 `cpu`。
-6. **`--no_test` 会崩**：`run()` 在 `use_test_csv=False` 时对 `None` 做 `:.4f` 格式化。
-   待修。
+6. **小类召回偏低**：1 轮冒烟的总体准确率 92.34%，但 balanced accuracy 只有
+   83.87%，C128 召回 68.14%（226 个里错 72 个）。这正是"只看准确率会漏掉"的问题，
+   正式基线要在 10 轮后重新评估。

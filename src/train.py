@@ -531,7 +531,7 @@ class Trainer:
         """测单张推理延迟，返回平均延迟（毫秒）。
 
         参数:
-            save_report: 是否把结果写成 <模型目录>/<设备>_latency.txt。
+            save_report: 是否把结果写成 <本次实验目录>/<设备>_latency.txt。
                 纯性能对比（不做训练）时传 False，这样不需要产物目录可写。
         """
         self.model.eval()
@@ -583,11 +583,12 @@ class Trainer:
 
         # ---------------- 保存 ----------------
         if save_report:
-            # 注意写的是 save_path 的上一级：同一模型的所有运行共用一个
-            # <设备>_latency.txt，后一次会覆盖前一次
+            # 写在本次实验目录里（不是上一级）。原来的写法是
+            # save_path/../<设备>_latency.txt，同一模型的所有运行共用一份，
+            # 后一次实验直接覆盖前一次，做 A/B 对比时延迟数据没法回溯。
             device_str = str(device).replace(":", "_")   # 避免 Windows 非法字符
             txt_file_path = os.path.join(
-                self.args.save_path, "..", str(device_str) + "_latency.txt"
+                self.args.save_path, str(device_str) + "_latency.txt"
             )
             os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
 

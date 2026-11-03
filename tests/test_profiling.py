@@ -12,13 +12,17 @@ thop.profile 返回的就是 MACs；按惯例 1 MAC ≈ 2 FLOPs，需要时由�
         返回        : (macs, params)，两者都是 float
 
     save_macs_and_parameters(macs, params, save_path) -> str
-        把两行报告写入 save_path 的【父目录】下的 macs_and_parameters.txt，
-        内容格式严格为（各占一行，末尾有换行）::
+        把两行报告写入 save_path 目录下的 macs_and_parameters.txt
+        （2026-11 起写在传入目录里；此前写的是它的父目录，导致同一模型的
+        多次实验互相覆盖），内容格式严格为（各占一行，末尾有换行）::
 
             MACs = <macs/1000**3:.4f> G
             Params = <params/1000**2:.4f> M
 
-        返回写入的文件完整路径
+        目录不存在时自动创建；返回写入的文件完整路径
+
+    Trainer.latency_test(..., save_report=True)
+        报告写到 <本次实验目录>/<设备>_latency.txt，同样不再写上一级
 
 命名规范：函数名一律小写加下划线，缩写也不例外。
     macs  -> 正确
@@ -100,7 +104,11 @@ def case_measure_conv() -> None:
 
 
 def case_save_report() -> None:
-    """报告内容与路径必须精确匹配。"""
+    """报告内容与路径必须精确匹配。
+
+    路径契约（2026-11 变更）：写在 save_path 目录里，不是它的父目录。
+    这样每次实验的 MACs 记录各自独立，A/B 对比时不会被后一次覆盖。
+    """
     with temp_dir() as tmp:
         save_path = os.path.join(tmp, "run1")
         os.makedirs(save_path, exist_ok=True)
@@ -111,10 +119,10 @@ def case_save_report() -> None:
 
         returned = profiling.save_macs_and_parameters(macs, params, save_path)
 
-        expected_path = os.path.join(tmp, "macs_and_parameters.txt")
+        expected_path = os.path.join(save_path, "macs_and_parameters.txt")
         assert os.path.isfile(expected_path), (
             f"报告未写在 {expected_path}，实际返回 {returned}"
-            f"；目录内容: {sorted(os.listdir(tmp))}"
+            f"；目录内容: {sorted(os.listdir(save_path))}"
         )
         assert isinstance(returned, str), (
             f"save_macs_and_parameters 必须返回路径字符串，实际 {returned!r}"
@@ -122,6 +130,10 @@ def case_save_report() -> None:
         assert os.path.abspath(returned) == os.path.abspath(expected_path), (
             f"返回值应为 {expected_path}，实际 {returned}"
         )
+        # 上一级不允许出现同名文件（那就是被覆盖的旧行为）
+        assert not os.path.exists(
+            os.path.join(tmp, "macs_and_parameters.txt")
+        ), "报告不该再写到 save_path 的上一级，那会覆盖其他实验的记录"
 
         with open(expected_path, "r", encoding="utf-8") as handle:
             text = handle.read()
@@ -161,9 +173,10 @@ def case_trainer_wiring() -> None:
             f"统计值应大于 0，实际 {(macs, params)}"
         )
 
-        expected_path = os.path.join(tmp, "macs_and_parameters.txt")
+        expected_path = os.path.join(save_path, "macs_and_parameters.txt")
         assert os.path.isfile(expected_path), (
-            f"trainer 未生成报告 {expected_path}；目录内容: {sorted(os.listdir(tmp))}"
+            f"trainer 未生成报告 {expected_path}；"
+            f"目录内容: {sorted(os.listdir(save_path))}"
         )
         with open(expected_path, "r", encoding="utf-8") as handle:
             assert "MACs" in handle.read(), "报告口径不是 MACs"
