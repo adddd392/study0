@@ -32,6 +32,11 @@ from torch.utils.data import Dataset
 from datasets import (
     BarcodeDataset,
     Mini_ImageNet_Datasets,
+    build_barcode_class_mapping,
+    build_barcode_preprocess_pipeline,
+    build_eval_transform,
+    build_label_to_index_map,
+    read_barcode_image,
 )
 
 
@@ -107,9 +112,7 @@ def build_barcode_split(split, cfg, shared_map=None):
         3. 类别映射由 fixed_classes 决定，不来自 CSV 内容 —— 只有这样
            才能保证训练/验证/测试的下标语义永远一致。
     """
-    fixed_classes = getattr(cfg, "fixed_classes", ("C128", "EAN13"))
-    # name 统一大写，避免配置里写 'c128' 就匹配不上
-    fixed_classes = tuple(str(name).upper() for name in fixed_classes)
+    fixed_classes = _barcode_fixed_classes(cfg)
     keep_grayscale = getattr(cfg, "keep_grayscale", True)
 
     dataset = BarcodeDataset(
@@ -155,3 +158,70 @@ def build_split(dataset_name, split, cfg, shared_map=None) -> SplitBundle:
             f"未知数据集: {dataset_name},可选：{available_datasets()}"
         )
     return DATASET_REGISTRY[dataset_name](split, cfg, shared_map)
+
+
+# ---------------------------------------------------------------------------
+# 推理端:预处理与标签映射也必须按数据集分派
+# ---------------------------------------------------------------------------
+
+def _barcode_fixed_classes(cfg):
+    """从配置读固定类别次序，统一大写。"""
+    fixed_classes = getattr(cfg, "fixed_classes", ("C128", "EAN13"))
+    return tuple(str(name).upper() for name in fixed_classes)
+
+
+def build_label_map(dataset_name, cfg):
+    """重建推理用的 类别名 -> 下标 映射。
+
+    必须与训练时**同一个来源**，否则预测下标对应的类别整体错位，而且
+    整个过程不会有任何报错:
+        Mini-ImageNet  按 train.csv 里标签首次出现的顺序
+        条码集          按 fixed_classes 常量的顺序
+    """
+    if dataset_name == "barcode":
+        # 传空的 label_names:条码集的类别完全由 fixed_classes 决定，
+        # 不依赖某个 CSV 恰好包含全部类别
+        _, class_to_idx = build_barcode_class_mapping(
+            (), _barcode_fixed_classes(cfg)
+        )
+        return class_to_idx
+    if dataset_name == "mini_imagenet":
+        return build_label_to_index_map(cfg.train_csv)
+    raise ValueError(
+        f"未知数据集: {dataset_name},可选：{available_datasets()}"
+    )
+
+
+def build_eval_preprocessor(dataset_name, cfg):
+    """返回单张图片的推理预处理函数:: image_path -> (C, H, W) 张量。
+
+    为什么必须按数据集分派:两套预处理读图库和通道处理都不同。条码图是
+    灰度 PNG，若用 Mini-ImageNet 的 plt.imread + build_eval_transform
+    走一遍，得到的张量与训练时的完全不是一回事，预测结果无法解释。
+    """
+    if dataset_name == "barcode":
+        keep_grayscale = getattr(cfg, "keep_grayscale", True)
+        pipeline = build_barcode_preprocess_pipeline(
+            tuple(cfg.input_size), keep_grayscale=keep_grayscale
+        )
+
+        def preprocess_barcode(image_path):
+            image = read_barcode_image(image_path, keep_grayscale)
+            return pipeline(image=image)["image"]
+
+        return preprocess_barcode
+
+    if dataset_name == "mini_imagenet":
+        # 延迟导入 pyplot：训练流程不需要它，避免白白拉高启动耗时
+        import matplotlib.pyplot as plt
+
+        transform = build_eval_transform(tuple(cfg.input_size))
+
+        def preprocess_mini_imagenet(image_path):
+            return transform(image=plt.imread(image_path))["image"]
+
+        return preprocess_mini_imagenet
+
+    raise ValueError(
+        f"未知数据集: {dataset_name},可选：{available_datasets()}"
+    )

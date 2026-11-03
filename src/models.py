@@ -40,6 +40,19 @@ def available_models() -> list:
     return list(MODEL_BUILDERS.keys())
 
 
+def first_conv_weight_key(model_name) -> str:
+    """返回第一个卷积层权重在 state_dict 里的键。
+
+    推理时必须从 checkpoint 反推输入通道数（灰度模型是 1、RGB 是 3），
+    这个键就是单一来源。由 FIRST_CONV_PATHS 拼出来，不再单独维护一张表：
+
+        Resnet-50         -> "conv1.weight"
+        MobileNetV3-Large -> "features.0.0.weight"
+    """
+    path = _first_conv_path(model_name)
+    return ".".join(str(step) for step in path) + ".weight"
+
+
 def _walk(model, path):
     """按路径取出子模块，路径元素可以是属性名(str)或序列下标(int)。"""
     module = model
