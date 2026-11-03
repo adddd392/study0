@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from dataset_factory import available_datasets, build_split
+from configs import DEFAULT_CONFIG, available_configs, build_config
 from models import get_model
 import profiling
 import checkpoint
@@ -340,7 +341,9 @@ class Trainer:
 
         txt_file_path = os.path.join(self.args.save_path, "results.txt")
         os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
-        with open(txt_file_path, "w") as f:
+        # 必须显式 utf-8：Windows 下默认 cp936，配置记录里有中文路径
+        # （本项目仓库路径就带中文）会写成乱码，事后没法核对实验配置
+        with open(txt_file_path, "w", encoding="utf-8") as f:
 
             f.write(f"Best Validation Epoch: {best_val_epoch}\n")
             f.write(f"Best Validation Loss: {best_val_loss:.4f}\n")
@@ -438,34 +441,77 @@ class Trainer:
         return mean_lat
 
 
+def _str2bool(value):
+    """argparse 的布尔解析。
+
+    不能直接写 type=bool：bool("False") 是 True（非空字符串都为真），
+    于是 --keep_grayscale False 会被当成 True，静默用错通道数。
+    """
+    if isinstance(value, bool):
+        return value
+    lowered = str(value).strip().lower()
+    if lowered in ("1", "true", "yes", "y", "on"):
+        return True
+    if lowered in ("0", "false", "no", "n", "off"):
+        return False
+    raise argparse.ArgumentTypeError(f"无法解析为布尔值: {value!r}")
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="Resnet-50")
-    parser.add_argument("--dataset", type=str, default="mini_imagenet",
-                        choices=available_datasets(),
-                        help="数据集名，决定走哪个 builder")
-    parser.add_argument("--keep_grayscale", type=bool, default=True,
-                        help="条码数据集是否保持单通道（决定模型第一层通道数）")
-    parser.add_argument("--num_workers", type=int, default=8,
-                        help="DataLoader 工作进程数，0 表示主进程加载")
-    parser.add_argument("--data_root", type=str, default=r"..\data\Mini-ImageNet-Dataset")
-    parser.add_argument("--use_train_csv", type=bool, default=True)
-    parser.add_argument("--train_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\train.csv")
-    parser.add_argument("--use_val_csv", type=bool, default=True)
-    parser.add_argument("--val_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\val.csv")
-    parser.add_argument("--use_test_csv", type=bool, default=True)
-    parser.add_argument("--test_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\test.csv")
-    parser.add_argument("--num_epochs", type=int, default=10)
-    parser.add_argument("--device", type=str, default="dml")
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--learning_rate", type=float, default=0.001)
-    parser.add_argument("--criterion", type=str, default="CrossEntropyLoss")
-    parser.add_argument("--optimizer", type=str, default="Adam")
-    parser.add_argument("--save_model", type=bool, default=True)
-    parser.add_argument("--save_path", type=str, default=None,
-                        help="实验产物目录，默认 saved_models/<dataset>/<model>/<时间戳>")
-    parser.add_argument("--input_size", type=tuple, default=(224, 224))
-    parser.add_argument("--seed", type=int, default=0)
+    parser = argparse.ArgumentParser(
+        description=(
+            "按命名配置训练。不带参数即跑 "
+            f"{DEFAULT_CONFIG}（快速验证链路，不做正式实验）。"
+        )
+    )
+    parser.add_argument(
+        "--config", default=DEFAULT_CONFIG, choices=available_configs(),
+        help="配置名，定义见 src/configs.py",
+    )
+    # 下面全部是"覆盖项"：默认 None 表示不覆盖，用配置里的值。
+    # 默认值只存在于 configs.py，这里不再复制一份 —— 那是重构前的病根。
+    parser.add_argument("--model_name", type=str, default=None)
+    parser.add_argument("--dataset", type=str, default=None,
+                        choices=available_datasets())
+    parser.add_argument("--keep_grayscale", type=_str2bool, default=None)
+    parser.add_argument("--num_workers", type=int, default=None)
+    parser.add_argument("--data_root", type=str, default=None)
+    parser.add_argument("--train_csv", type=str, default=None)
+    parser.add_argument("--val_csv", type=str, default=None)
+    parser.add_argument("--test_csv", type=str, default=None)
+    parser.add_argument("--num_epochs", type=int, default=None)
+    parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--batch_size", type=int, default=None)
+    parser.add_argument("--learning_rate", type=float, default=None)
+    parser.add_argument("--criterion", type=str, default=None)
+    parser.add_argument("--optimizer", type=str, default=None)
+    parser.add_argument("--save_model", type=_str2bool, default=None)
+    parser.add_argument("--save_path", type=str, default=None)
+    parser.add_argument("--input_size", type=int, nargs=2, default=None,
+                        metavar=("H", "W"))
+    parser.add_argument("--seed", type=int, default=None)
+    # 关掉某个 split：配置里没有 use_*_csv 开关（那是可推导的事实），
+    # 所以用显式的 --no_* 表达"确实不要"，而不是靠布尔开关。
+    parser.add_argument("--no_val", action="store_true",
+                        help="不加载验证集")
+    parser.add_argument("--no_test", action="store_true",
+                        help="不加载测试集")
     args = parser.parse_args()
-    trainer_instance = Trainer(args)
-    trainer_instance.run()
+
+    # 只把用户显式给出的参数当作覆盖项（None 表示"没给"）
+    overrides = {
+        key: value
+        for key, value in vars(args).items()
+        if key not in ("config", "no_val", "no_test") and value is not None
+    }
+    if "input_size" in overrides:
+        overrides["input_size"] = tuple(overrides["input_size"])
+    if args.no_val:
+        overrides["val_csv"] = None
+    if args.no_test:
+        overrides["test_csv"] = None
+
+    config = build_config(args.config, **overrides)
+    print(config.describe())
+    print()
+    Trainer(config.to_namespace()).run()
