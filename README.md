@@ -14,19 +14,26 @@
 
 ```
 study/                      git 仓库
-├── src/                    生产代码（14 个模块，扁平一层）
+├── src/                    生产代码
 │   ├── configs.py          实验配置注册表 + 路径基准（唯一定义处）
 │   ├── dataset_factory.py  数据集注册表 + 统一 builder（SplitBundle）
-│   ├── datasets.py         两个数据集类 + 预处理管道
+│   ├── datasets/           数据集包，按职责分 5 个模块
+│   │   ├── __init__.py     对外重导出（调用方 import 路径不变）
+│   │   ├── image_io.py     读图（中文路径兼容、通道统一）
+│   │   ├── transforms.py   归一化常量、预处理管道、增强类型常量
+│   │   ├── labels.py       标签映射构建
+│   │   ├── mini_imagenet.py  Mini-ImageNet 数据集
+│   │   └── barcode.py      条码码制数据集
 │   ├── models.py           模型注册表 + 首层通道数适配（灰度 ResNet）
 │   ├── train.py            Trainer（训练/验证/测试/产物记录）+ 命令行
 │   ├── run_exp.py          实验总入口（按配置名批量跑）
 │   ├── inference.py        单张推理（预处理与标签映射按数据集分派）
+│   ├── preview_datasets.py 数据集预览：链路检查 + 样本可视化
 │   ├── split_barcode.py    按源图键分组分层切分条码数据集（独立命令行）
-│   └── 基础设施            plotting / checkpoint / profiling /
+│   └── 基础设施            plotting / checkpoint / profiling / metrics /
 │                           seeding / device_utils / resnet
-├── tests/                  17 个独立测试文件（可执行脚本，非 pytest）
-├── dataset/                条码三份切分 CSV（已入库）
+├── tests/                  18 个独立测试文件（可执行脚本，非 pytest）
+├── dataset/                条码原始标注 + 三份切分 CSV（均已入库）
 ├── docs/                   学习笔记、对比文档、周报 PPT
 ├── .flake8                 PEP8 79 列 + 单进程检查
 └── requirements.txt        锁定的依赖版本
@@ -94,6 +101,9 @@ python src\train.py --config barcode_mobilenet_128 --num_epochs 20 --batch_size 
 python src\inference.py
 python src\inference.py --dataset barcode --checkpoint <某个 .pth 路径>
 
+# 数据集预览（链路检查 + 样本可视化）
+python src\preview_datasets.py --no-show
+
 # 重新切分条码数据集
 python src\split_barcode.py --help
 ```
@@ -125,7 +135,7 @@ python src\train.py --config barcode_mobilenet_128 --num_epochs 20
 
 ## 6. 测试
 
-17 个测试文件，都是**可直接运行的脚本**（不是 pytest 用例）：
+18 个测试文件，都是**可直接运行的脚本**（不是 pytest 用例）：
 
 ```powershell
 # 跑全部
