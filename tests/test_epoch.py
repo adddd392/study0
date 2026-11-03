@@ -30,7 +30,7 @@ _SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from train import trainer  # noqa: E402
+from train import Trainer  # noqa: E402
 
 # 6 个样本、6 个类别。刻意让 Top-1 / Top-5 都有错有对。
 LOGITS = torch.tensor(
@@ -123,7 +123,7 @@ def manual_metrics(logits, labels, topk=5):
 
 def make_trainer(**loaders):
     """构造一个只装了计算所需属性的 trainer，不走 dataset_init。"""
-    obj = trainer(argparse.Namespace(device="cpu"))
+    obj = Trainer(argparse.Namespace(device="cpu"))
     obj.device = torch.device("cpu")
     obj.model = FakeModel()
     obj.criterion = nn.CrossEntropyLoss()

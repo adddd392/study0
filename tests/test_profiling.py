@@ -139,7 +139,7 @@ def case_trainer_wiring() -> None:
     run_exp.py 里有 3 处无参调用，所以方法签名不能改；
     原实现返回 (macs, params)，这个返回值也必须保留。
     """
-    from train import trainer
+    from train import Trainer
 
     with temp_dir() as tmp:
         save_path = os.path.join(tmp, "run1")
@@ -148,7 +148,7 @@ def case_trainer_wiring() -> None:
         args = argparse.Namespace(
             device="cpu", input_size=(8, 8), save_path=save_path
         )
-        obj = trainer(args)
+        obj = Trainer(args)
         obj.model = nn.Sequential(nn.Conv2d(3, 4, 3))
 
         result = obj.get_model_macs_and_parameters()

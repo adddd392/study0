@@ -2,7 +2,7 @@
 
 契约::
 
-    num_classes = trainer(args).dataset_init()
+    num_classes = Trainer(args).dataset_init()
 
     行为:
     - 按 args.use_train_csv / use_val_csv / use_test_csv 决定建哪几份数据；
@@ -32,7 +32,7 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 from datasets import build_label_to_index_map  # noqa: E402
-from train import trainer  # noqa: E402
+from train import Trainer  # noqa: E402
 
 DATA_ROOT = os.path.abspath(
     os.path.join(
@@ -68,7 +68,7 @@ def sampler_name(loader):
 def case_all_splits() -> None:
     """三份数据全开：检查挂载、打乱策略、类别数与映射共享。"""
     args = make_args()
-    obj = trainer(args)
+    obj = Trainer(args)
 
     num_classes = obj.dataset_init()
 
@@ -106,7 +106,7 @@ def case_all_splits() -> None:
 def case_shared_label_map() -> None:
     """核心不变量：三份数据共用同一个映射，且来自 train.csv。"""
     args = make_args()
-    obj = trainer(args)
+    obj = Trainer(args)
     obj.dataset_init()
 
     train_map = obj.train_dataset.get_map()
@@ -127,7 +127,7 @@ def case_shared_label_map() -> None:
 def case_train_only() -> None:
     """只开训练集时，不应创建 val/test 的 dataset 或 loader。"""
     args = make_args(use_val_csv=False, use_test_csv=False)
-    obj = trainer(args)
+    obj = Trainer(args)
 
     num_classes = obj.dataset_init()
 
@@ -143,7 +143,7 @@ def case_train_only() -> None:
 def case_val_without_train_rejected() -> None:
     """未加载训练集却要加载 val，必须报错而不是静默错位。"""
     args = make_args(use_train_csv=False, use_val_csv=True)
-    obj = trainer(args)
+    obj = Trainer(args)
 
     try:
         obj.dataset_init()

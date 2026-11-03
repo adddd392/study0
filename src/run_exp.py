@@ -1,4 +1,4 @@
-from train import trainer
+from train import Trainer
 import time
 import os
 from types import SimpleNamespace
@@ -24,7 +24,7 @@ args = {
 }
 args = SimpleNamespace(**args)
 if __name__ == '__main__':
-    trainer = trainer(args)
+    trainer = Trainer(args)
     trainer.run()
     trainer.get_model_macs_and_parameters()
     trainer.latency_test()

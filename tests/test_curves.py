@@ -63,12 +63,12 @@ def temp_dir():
 
 def make_trainer(save_path, num_epochs):
     """构造一个只够画图用的 trainer（不建模型、不读数据）。"""
-    from train import trainer
+    from train import Trainer
 
     args = argparse.Namespace(
         device="cpu", save_path=save_path, num_epochs=num_epochs
     )
-    return trainer(args)
+    return Trainer(args)
 
 
 def assert_png(path):

@@ -20,12 +20,12 @@ if _SRC not in sys.path:
 
 import torch.nn as nn  # noqa: E402
 
-from train import trainer  # noqa: E402
+from train import Trainer  # noqa: E402
 
 
-def make_trainer(device: str = "cpu") -> trainer:
+def make_trainer(device: str = "cpu") -> Trainer:
     """构造一个只初始化了设备的最小 trainer。"""
-    return trainer(argparse.Namespace(device=device))
+    return Trainer(argparse.Namespace(device=device))
 
 
 def case_normal() -> None:
