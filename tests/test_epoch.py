@@ -242,11 +242,40 @@ def case_train_updates_parameters() -> None:
     print("train_one_epoch (training 模式 + 参数更新 + 指标): OK")
 
 
+def case_topk_with_few_classes() -> None:
+    """类别数少于 5 时 Top-K 不能越界（条码任务是 2 类）。
+
+    重建前的实现写死 torch.topk(outputs, 5)，
+    在 2 类任务上直接抛 "selected index k out of range"。
+    这里锁死：能跑通、Top-1 与手算一致、Top-K 退化为 100%。
+    """
+    logits = torch.tensor(
+        [
+            [3.0, -1.0],   # 预测 0，真值 0 -> 命中
+            [-1.0, 3.0],   # 预测 1，真值 0 -> 错
+            [2.0, 1.0],    # 预测 0，真值 1 -> 错
+            [0.5, 4.0],    # 预测 1，真值 1 -> 命中
+        ]
+    )
+    labels = torch.tensor([0, 0, 1, 1])
+
+    obj = make_trainer(val_loader=ListLoader(logits, labels, BATCH_SIZE))
+    loss, top1, top5 = obj.validate()
+
+    _, exp_top1, exp_top5 = manual_metrics(logits, labels, topk=2)
+    assert abs(top1 - exp_top1) < 1e-6, f"Top-1 期望 {exp_top1}，实际 {top1}"
+    assert abs(top5 - exp_top5) < 1e-6, f"Top-K 期望 {exp_top5}，实际 {top5}"
+    # K 被压到类别数 2 时，Top-K 必然覆盖全部类别
+    assert top5 == 100.0, f"2 类任务 Top-K 应恒为 100%，实际 {top5}"
+    print("2 类任务的 Top-K 不越界: OK")
+
+
 def main() -> int:
     case_validate_metrics()
     case_loss_weighted_by_samples()
     case_test_uses_own_loader()
     case_train_updates_parameters()
+    case_topk_with_few_classes()
     print("全部通过")
     return 0
 

@@ -171,7 +171,13 @@ class Trainer:
                 total += labels.size(0)
                 Top1_correct += (Top1_predicted == labels).sum().item()
 
-                _, Top5_predicted = torch.topk(outputs, 5, dim=1)
+                # Top-K 的 K 不能超过类别数：条码任务只有 2 类，
+                # torch.topk(outputs, 5) 会直接抛 "selected index k out of
+                # range"。这里取 min(5, 类别数)。
+                # 注意 K 被压到类别数时，Top-K 恒等于 100%，此时它不是
+                # 有效指标，解读 2 类任务请以 Top-1 为准。
+                topk_k = min(5, outputs.size(1))
+                _, Top5_predicted = torch.topk(outputs, topk_k, dim=1)
                 Top5_hit = Top5_predicted.eq(labels.view(-1, 1))
                 Top5_correct += Top5_hit.sum().item()
         epoch_Top1_acc = 100. * Top1_correct / total
