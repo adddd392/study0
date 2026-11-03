@@ -41,17 +41,18 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 # ---------------- 默认路径 ----------------
-# 以本文件所在位置(src/)为基准解析,因此从任何目录启动都能找到数据,不依赖 cd
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_ROOT = os.path.abspath(
-    os.path.join(PROJECT_ROOT, "..", "data", "Mini-ImageNet-Dataset")
+# 路径基准统一由 configs 提供（单一来源）。本文件不再自己算一遍
+# PROJECT_ROOT / data / saved_models，否则改了目录结构要改两处。
+from configs import (  # noqa: E402
+    BARCODE_DIR,
+    MINI_IMAGENET_ROOT,
+    SAVED_ROOT,
 )
-BARCODE_DIR = os.path.join(PROJECT_ROOT, "dataset")
-SAVE_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, "..", "saved_models"))
+
 DEFAULT_MODEL = "Resnet-50"
 DEFAULT_DATASET = "mini_imagenet"
 DEFAULT_IMAGE = os.path.join(
-    DATA_ROOT, "val", "n03544143", "n0354414300000023.jpg"
+    MINI_IMAGENET_ROOT, "val", "n03544143", "n0354414300000023.jpg"
 )
 
 # 各架构分类头(最后一个 Linear)的权重名,用于从 checkpoint 推断类别数
@@ -114,9 +115,9 @@ def find_default_checkpoint(dataset_name, model_name):
     """自动定位默认权重,优先新布局 saved_models/<dataset>/<model>/。"""
     candidates = [
         # 新布局:实验产物按数据集分目录,避免条码模型和 ImageNet 模型混在一起
-        os.path.join(SAVE_ROOT, dataset_name, model_name),
+        os.path.join(SAVED_ROOT, dataset_name, model_name),
         # 旧布局:兼容改造前训练出的结果
-        os.path.join(SAVE_ROOT, model_name),
+        os.path.join(SAVED_ROOT, model_name),
     ]
     for run_root in candidates:
         if os.path.isdir(run_root):
@@ -147,8 +148,12 @@ def resolve_paths(args):
         if args.image is None:
             args.image = first_image_of_csv(args.val_csv)
     else:
-        args.train_csv = args.train_csv or os.path.join(DATA_ROOT, "train.csv")
-        args.val_csv = args.val_csv or os.path.join(DATA_ROOT, "val.csv")
+        args.train_csv = args.train_csv or os.path.join(
+            MINI_IMAGENET_ROOT, "train.csv"
+        )
+        args.val_csv = args.val_csv or os.path.join(
+            MINI_IMAGENET_ROOT, "val.csv"
+        )
         if args.image is None:
             args.image = DEFAULT_IMAGE
     return args

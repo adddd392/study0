@@ -49,10 +49,10 @@ from dataset_factory import available_datasets
 # 以本文件位置为基准算绝对路径，这样从任何工作目录启动都能找到数据。
 # 重构前用 r"..\data\..." 是相对**当前工作目录**的，只有 cd 到 src/ 才正确。
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_MINI_ROOT = os.path.abspath(
+MINI_IMAGENET_ROOT = os.path.abspath(
     os.path.join(PROJECT_ROOT, "..", "data", "Mini-ImageNet-Dataset")
 )
-_BARCODE_DIR = os.path.join(PROJECT_ROOT, "dataset")
+BARCODE_DIR = os.path.join(PROJECT_ROOT, "dataset")
 SAVED_ROOT = os.path.abspath(
     os.path.join(PROJECT_ROOT, "..", "saved_models")
 )
@@ -229,10 +229,10 @@ def _mini_imagenet(name: str, **overrides) -> ExperimentConfig:
     base = dict(
         name=name,
         dataset="mini_imagenet",
-        data_root=_MINI_ROOT,
-        train_csv=os.path.join(_MINI_ROOT, "train.csv"),
-        val_csv=os.path.join(_MINI_ROOT, "val.csv"),
-        test_csv=os.path.join(_MINI_ROOT, "test.csv"),
+        data_root=MINI_IMAGENET_ROOT,
+        train_csv=os.path.join(MINI_IMAGENET_ROOT, "train.csv"),
+        val_csv=os.path.join(MINI_IMAGENET_ROOT, "val.csv"),
+        test_csv=os.path.join(MINI_IMAGENET_ROOT, "test.csv"),
         input_size=(224, 224),
         keep_grayscale=False,
         num_epochs=30,
@@ -251,9 +251,9 @@ def _barcode(name: str, **overrides) -> ExperimentConfig:
         name=name,
         dataset="barcode",
         data_root=None,
-        train_csv=os.path.join(_BARCODE_DIR, "barcode_train.csv"),
-        val_csv=os.path.join(_BARCODE_DIR, "barcode_val.csv"),
-        test_csv=os.path.join(_BARCODE_DIR, "barcode_test.csv"),
+        train_csv=os.path.join(BARCODE_DIR, "barcode_train.csv"),
+        val_csv=os.path.join(BARCODE_DIR, "barcode_val.csv"),
+        test_csv=os.path.join(BARCODE_DIR, "barcode_test.csv"),
         input_size=(224, 224),
         keep_grayscale=True,
         num_epochs=10,
