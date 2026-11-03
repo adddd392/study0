@@ -1,9 +1,16 @@
 """checkpoint 模块的行为检查。
 
-覆盖三条路径：
+覆盖四条路径：
     1. 路径约定：文件名与子目录结构符合训练端的写入约定
     2. 往返一致：保存后再加载，张量逐元素相同
     3. 安全性：weights_only=True 生效，含非张量对象时加载被拒绝
+    4. 设备无关：非 CPU 设备（DirectML）上训练的模型，保存后必须能被
+       weights_only=True 正常加载
+
+第 4 条是修 bug 时补的：原实现直接 torch.save(model.state_dict())，
+在 DML 上训练时把 privateuseone 张量写进文件，加载端抛
+UnpicklingError（_rebuild_device_tensor_from_numpy 不在白名单里），
+导致训练跑完却在收尾阶段崩溃、所有产物丢失。
 
 临时目录建在工作区内（.tmp_tests/），因为系统临时目录在本机沙箱下
 创建/清理会触发 WinError 5 权限错误。
@@ -106,10 +113,49 @@ def case_weights_only() -> None:
         )
 
 
+def case_device_independent_save() -> None:
+    """非 CPU 设备上训练的模型，保存后必须能被 weights_only=True 加载。
+
+    本机有 DirectML 时做真实回归（这才是当初崩掉的场景）；
+    没有 DML 时退化为"落盘张量必须都在 CPU 上"的约定检查，
+    因为 CPU 设备上这两件事等价。
+    """
+    with temp_dir() as tmp:
+        # 常规检查：落盘的所有张量都在 CPU 上
+        model = nn.Sequential(nn.Linear(4, 3), nn.BatchNorm1d(3))
+        path = checkpoint.save_checkpoint(model, tmp, 1)
+        state = checkpoint.load_checkpoint(path)  # weights_only=True
+        devices = {
+            value.device.type for value in state.values()
+            if isinstance(value, torch.Tensor)
+        }
+        assert devices == {"cpu"}, f"落盘张量不在 CPU 上: {sorted(devices)}"
+
+        # 真实回归：构造 DML 张量，走同一条保存/加载路径
+        try:
+            import torch_directml
+        except ImportError:
+            print("设备无关保存: OK  （无 DirectML，仅验证 CPU 落盘约定）")
+            return
+        if not torch_directml.is_available():
+            print("设备无关保存: OK  （DirectML 不可用，仅验证 CPU 落盘约定）")
+            return
+
+        dml_model = nn.Linear(3, 2).to(torch_directml.device())
+        dml_path = checkpoint.save_checkpoint(dml_model, tmp, 2)
+        loaded = checkpoint.load_checkpoint(dml_path)
+        assert loaded["weight"].device.type == "cpu", "DML 权重未落盘到 CPU"
+        assert torch.equal(
+            loaded["weight"], dml_model.weight.detach().cpu()
+        ), "DML 权重往返不一致"
+    print("设备无关保存: OK  （含 DirectML 真实回归）")
+
+
 def main() -> int:
     case_path_convention()
     case_roundtrip()
     case_weights_only()
+    case_device_independent_save()
     print("全部通过")
     return 0
 
