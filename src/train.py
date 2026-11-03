@@ -10,6 +10,7 @@ from configs import (
     build_config,
 )
 from models import get_model
+import metrics
 import profiling
 import checkpoint
 import plotting
@@ -190,18 +191,27 @@ class Trainer:
         else:
             raise ValueError("Wrong criterion name")
 
-    def _run_epoch(self, loader, is_train, label):
+    def _run_epoch(self, loader, is_train, label, collect=None):
         """跑一个 epoch，返回 (平均损失, Top-1 正确率, Top-5 正确率)。
 
         is_train 同时决定三件事：模型处于 train 还是 eval 模式、梯度是否
         开启、是否执行 backward + optimizer.step。评估时在循环外统一关闭
         梯度，避免逐批创建 no_grad 上下文。
+
+        :param collect: 传入一个字典时，把逐样本的真实标签与 Top-1 预测
+                        追加到它的 "targets" / "predictions" 键下。
+                        混淆矩阵需要逐样本预测，而在同一遍前向里顺手收集，
+                        比再跑一遍测试集更省时，也保证两者看到的是同一批数据。
+                        不传则完全不额外存东西（训练时不需要）。
         """
         self.model.train(is_train)
         epoch_loss = 0.0
         Top1_correct = 0
         Top5_correct = 0
         total = 0
+        if collect is not None:
+            collect["targets"] = []
+            collect["predictions"] = []
         with torch.set_grad_enabled(is_train):
             for images, labels in tqdm(loader):
                 images = images.to(self.device)
@@ -217,6 +227,13 @@ class Trainer:
                 _, Top1_predicted = torch.max(outputs, 1)
                 total += labels.size(0)
                 Top1_correct += (Top1_predicted == labels).sum().item()
+
+                # 收集到 CPU 的普通 list：指标模块不接触张量，也不需要设备
+                if collect is not None:
+                    collect["targets"].extend(labels.cpu().tolist())
+                    collect["predictions"].extend(
+                        Top1_predicted.cpu().tolist()
+                    )
 
                 # Top-K 的 K 不能超过类别数：条码任务只有 2 类，
                 # torch.topk(outputs, 5) 会直接抛 "selected index k out of
@@ -246,9 +263,58 @@ class Trainer:
             self.val_loader, is_train=False, label="Validation")
 
     def test(self):
-        """在测试集上评估，返回 (测试损失, Top-1 正确率, Top-5 正确率)。"""
+        """在测试集上评估，返回 (测试损失, Top-1 正确率, Top-5 正确率)。
+
+        评估的同时把逐样本预测留在 self.test_outputs 里，供 run() 生成
+        混淆矩阵与每类指标。放在这里而不是 run() 里重跑一遍，是为了保证
+        "准确率"和"混淆矩阵"来自同一批前向结果。
+        """
+        self.test_outputs = {}
         return self._run_epoch(
-            self.test_loader, is_train=False, label="Test")
+            self.test_loader,
+            is_train=False,
+            label="Test",
+            collect=self.test_outputs,
+        )
+
+    def collect_class_names(self, num_classes):
+        """把训练集的"类别名 → 下标"映射反查成"下标 → 类别名"列表。
+
+        分类报告要显示类别名而不是 0/1。映射的唯一来源是训练集构建时
+        产生的那一份（三份数据共用），所以这里只读训练集，不重新构建。
+        映射缺失或下标有空洞时用下标字符串占位，保证长度恒等于类别数。
+        """
+        mapping = None
+        dataset = getattr(self, "train_dataset", None)
+        if dataset is not None and hasattr(dataset, "get_map"):
+            mapping = dataset.get_map()
+        if not mapping:
+            return [str(index) for index in range(num_classes)]
+        names = [str(index) for index in range(num_classes)]
+        for name, index in mapping.items():
+            if 0 <= index < num_classes:
+                names[index] = str(name)
+        return names
+
+    def build_classification_report(self):
+        """用测试集的逐样本预测生成分类报告，返回 (报告字典, 文本)。
+
+        没有测试集（或测试集为空）时返回 (None, "")，调用方据此决定
+        是否写报告。2 类任务上 Top-5 恒为 100%，必须靠这份报告才看得出
+        哪一类失效、失效到什么程度。
+        """
+        outputs = getattr(self, "test_outputs", None)
+        if not outputs or not outputs.get("targets"):
+            return None, ""
+        report = metrics.classification_report(
+            outputs["targets"],
+            outputs["predictions"],
+            self.num_classes,
+            class_names=self.collect_class_names(self.num_classes),
+        )
+        return report, metrics.format_report(
+            report, title="分类报告（测试集）"
+        )
 
     def run_train(self):
         if not self.args.use_train_csv:
@@ -284,6 +350,13 @@ class Trainer:
                 best_val_loss = val_loss
                 best_val_epoch = epoch + 1
                 self.best_model_path = self.save_model(epoch + 1)
+        # 没有验证集时把三个空列表统一换成 None。调用方（绘图、results.txt）
+        # 都用 "is not None" 判断有没有验证曲线；空列表不为 None，会被当成
+        # "有验证数据但长度是 0"，绘图时因长度与训练曲线不一致而报错。
+        if not self.args.use_val_csv:
+            validation_losses = None
+            validation_Top1_accuracies = None
+            validation_Top5_accuracies = None
         return (
             training_losses,
             training_Top1_accuracies,
@@ -365,6 +438,9 @@ class Trainer:
                 if best_model_path and os.path.exists(best_model_path):
                     self.load_model(best_model_path)
         test_loss, test_Top1_acc, test_Top5_acc = self.run_test()
+        # 分类报告用测试集的逐样本预测算，必须在 run_test() 之后、
+        # 且在写 results.txt 之前取
+        report, report_text = self.build_classification_report()
         self.draw_loss_acc_curve(
             training_losses=training_losses,
             training_Top1_accuracies=training_Top1_accuracies,
@@ -380,13 +456,23 @@ class Trainer:
         # （本项目仓库路径就带中文）会写成乱码，事后没法核对实验配置
         with open(txt_file_path, "w", encoding="utf-8") as f:
 
-            f.write(f"Best Validation Epoch: {best_val_epoch}\n")
-            f.write(f"Best Validation Loss: {best_val_loss:.4f}\n")
-            f.write(
-                f"Test Loss: {test_loss:.4f}, "
-                f"Top-1 Accuracy: {test_Top1_acc:.2f}%, "
-                f"Top-5 Accuracy: {test_Top5_acc:.2f}%\n"
-            )
+            # 没有验证集时 best_val_* 是 None/inf，不能硬套 :.4f 格式
+            if best_val_epoch is None:
+                f.write("Best Validation Epoch: 未提供验证集\n")
+                f.write("Best Validation Loss: 未提供验证集\n")
+            else:
+                f.write(f"Best Validation Epoch: {best_val_epoch}\n")
+                f.write(f"Best Validation Loss: {best_val_loss:.4f}\n")
+            # 同理：--no_test 时 run_test() 返回三个 None，原来的写法
+            # 会对 None 做 :.4f 直接 TypeError
+            if test_loss is None:
+                f.write("Test: 未提供测试集（use_test_csv=False）\n")
+            else:
+                f.write(
+                    f"Test Loss: {test_loss:.4f}, "
+                    f"Top-1 Accuracy: {test_Top1_acc:.2f}%, "
+                    f"Top-5 Accuracy: {test_Top5_acc:.2f}%\n"
+                )
             f.write(f"training_losses:{training_losses}\n")
             f.write(f"training_Top1_accuracies:{training_Top1_accuracies}\n")
             f.write(f"training_Top5_accuracies:{training_Top5_accuracies}\n")
@@ -397,7 +483,13 @@ class Trainer:
             f.write(
                 f"validation_Top5_accuracies:{validation_Top5_accuracies}\n"
             )
+            # 分类报告放在最后：前面是机器可解析的原始序列，这里是人读的表格
+            if report_text:
+                f.write("\n")
+                f.write(report_text + "\n")
             f.write(f"{self.args}\n")
+        if report_text:
+            print(report_text)
         return (
             training_losses,
             training_Top1_accuracies,
