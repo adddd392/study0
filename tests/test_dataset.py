@@ -94,7 +94,8 @@ def case_all_splits() -> None:
     # 数据根目录要指向对应的 split 子目录
     for split in ("train", "val", "test"):
         dataset = getattr(obj, f"{split}_dataset")
-        assert os.path.basename(os.path.normpath(dataset.data_root)) == split, (
+        root_name = os.path.basename(os.path.normpath(dataset.data_root))
+        assert root_name == split, (
             f"{split}_dataset 的 data_root 指向错误: {dataset.data_root}"
         )
 
@@ -112,7 +113,9 @@ def case_shared_label_map() -> None:
     train_map = obj.train_dataset.get_map()
     expected = build_label_to_index_map(args.train_csv)
 
-    assert train_map == expected, "train 的映射与 build_label_to_index_map(train.csv) 不一致"
+    assert train_map == expected, (
+        "train 的映射与 build_label_to_index_map(train.csv) 不一致"
+    )
 
     # 必须是同一个对象，而不是内容相等——证明没有重复重建
     assert obj.val_dataset.get_map() is train_map, (

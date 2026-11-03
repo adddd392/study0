@@ -165,7 +165,9 @@ class Trainer:
 
     def optimizer_init(self):
         if self.args.optimizer == "Adam":
-            self.optimizer = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+            self.optimizer = optim.Adam(
+                self.model.parameters(), lr=self.args.learning_rate
+            )
         else:
             raise ValueError("Wrong optimizer name")
 
@@ -274,11 +276,24 @@ class Trainer:
                 validation_losses.append(val_loss)
                 validation_Top1_accuracies.append(val_Top1_acc)
                 validation_Top5_accuracies.append(val_Top5_acc)
-            if self.args.save_model and self.args.use_val_csv and val_loss < best_val_loss:
+            if (
+                self.args.save_model
+                and self.args.use_val_csv
+                and val_loss < best_val_loss
+            ):
                 best_val_loss = val_loss
                 best_val_epoch = epoch + 1
                 self.best_model_path = self.save_model(epoch + 1)
-        return training_losses, training_Top1_accuracies, training_Top5_accuracies, validation_losses, validation_Top1_accuracies, validation_Top5_accuracies, best_val_epoch, best_val_loss
+        return (
+            training_losses,
+            training_Top1_accuracies,
+            training_Top5_accuracies,
+            validation_losses,
+            validation_Top1_accuracies,
+            validation_Top5_accuracies,
+            best_val_epoch,
+            best_val_loss,
+        )
 
     def run_test(self):
         if not self.args.use_test_csv:
@@ -334,19 +349,30 @@ class Trainer:
         if not self._explicit_save_path:
             self.args.save_path = self.default_save_path()
         self.num_classes = self.dataset_init()
-        training_losses, training_Top1_accuracies, training_Top5_accuracies, validation_losses, validation_Top1_accuracies, validation_Top5_accuracies, best_val_epoch, best_val_loss = self.run_train()
+        (
+            training_losses,
+            training_Top1_accuracies,
+            training_Top5_accuracies,
+            validation_losses,
+            validation_Top1_accuracies,
+            validation_Top5_accuracies,
+            best_val_epoch,
+            best_val_loss,
+        ) = self.run_train()
         if validation_losses is not None:
             if self.args.use_test_csv:
                 best_model_path = getattr(self, "best_model_path", None)
                 if best_model_path and os.path.exists(best_model_path):
                     self.load_model(best_model_path)
         test_loss, test_Top1_acc, test_Top5_acc = self.run_test()
-        self.draw_loss_acc_curve(training_losses=training_losses,
-                                 training_Top1_accuracies=training_Top1_accuracies,
-                                 training_Top5_accuracies=training_Top5_accuracies,
-                                 validation_losses=validation_losses,
-                                 validation_Top1_accuracies=validation_Top1_accuracies,
-                                 validation_Top5_accuracies=validation_Top5_accuracies)
+        self.draw_loss_acc_curve(
+            training_losses=training_losses,
+            training_Top1_accuracies=training_Top1_accuracies,
+            training_Top5_accuracies=training_Top5_accuracies,
+            validation_losses=validation_losses,
+            validation_Top1_accuracies=validation_Top1_accuracies,
+            validation_Top5_accuracies=validation_Top5_accuracies,
+        )
 
         txt_file_path = os.path.join(self.args.save_path, "results.txt")
         os.makedirs(os.path.dirname(txt_file_path), exist_ok=True)
@@ -356,19 +382,39 @@ class Trainer:
 
             f.write(f"Best Validation Epoch: {best_val_epoch}\n")
             f.write(f"Best Validation Loss: {best_val_loss:.4f}\n")
-            f.write(f"Test Loss: {test_loss:.4f}, Top-1 Accuracy: {test_Top1_acc:.2f}%, Top-5 Accuracy: {test_Top5_acc:.2f}%\n")
+            f.write(
+                f"Test Loss: {test_loss:.4f}, "
+                f"Top-1 Accuracy: {test_Top1_acc:.2f}%, "
+                f"Top-5 Accuracy: {test_Top5_acc:.2f}%\n"
+            )
             f.write(f"training_losses:{training_losses}\n")
             f.write(f"training_Top1_accuracies:{training_Top1_accuracies}\n")
             f.write(f"training_Top5_accuracies:{training_Top5_accuracies}\n")
             f.write(f"validation_losses:{validation_losses}\n")
-            f.write(f"validation_Top1_accuracies:{validation_Top1_accuracies}\n")
-            f.write(f"validation_Top5_accuracies:{validation_Top5_accuracies}\n")
+            f.write(
+                f"validation_Top1_accuracies:{validation_Top1_accuracies}\n"
+            )
+            f.write(
+                f"validation_Top5_accuracies:{validation_Top5_accuracies}\n"
+            )
             f.write(f"{self.args}\n")
-        return training_losses, training_Top1_accuracies, training_Top5_accuracies, validation_losses, validation_Top1_accuracies, validation_Top5_accuracies, test_loss, test_Top1_acc, test_Top5_acc
+        return (
+            training_losses,
+            training_Top1_accuracies,
+            training_Top5_accuracies,
+            validation_losses,
+            validation_Top1_accuracies,
+            validation_Top5_accuracies,
+            test_loss,
+            test_Top1_acc,
+            test_Top5_acc,
+        )
 
     def save_model(self, epoch):
         """保存当前模型权重，返回写入的文件路径。"""
-        return checkpoint.save_checkpoint(self.model, self.args.save_path, epoch)
+        return checkpoint.save_checkpoint(
+            self.model, self.args.save_path, epoch
+        )
 
     def load_model(self, model_path):
         """加载权重到当前模型，并迁移到当前设备。"""
