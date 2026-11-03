@@ -26,12 +26,30 @@ class Trainer:
         self.dataset_name = getattr(args, "dataset", "mini_imagenet")
         # 输入通道数由训练集声明(dataset_init 里覆盖)，默认 3 兼容 Mini-ImageNet
         self.in_channels = 3
+        # 用户显式给了产物目录就尊重它；否则每次 run() 自动生成带时间戳的新目录
+        self._explicit_save_path = getattr(args, "save_path", None) is not None
+        if not self._explicit_save_path:
+            args.save_path = self.default_save_path()
         self.device = device_utils.resolve_device(args.device)
         self.model = None
         # self.model_init()
         # self.criterion_init()
         # self.optimizer_init()
         # self.dataset_init()
+
+    def default_save_path(self):
+        """实验产物目录: saved_models/<数据集>/<模型>/<时间戳>。
+
+        按数据集分层是必须的:条码模型和 ImageNet 模型混在同一个
+        saved_models/<模型>/ 下时，推理端的"自动找最近一次权重"会拿到
+        另一个数据集的权重，类别数都不一样，还不会报错。
+        """
+        return os.path.join(
+            r"..\saved_models",
+            self.dataset_name,
+            getattr(self.args, "model_name", "unknown"),
+            str(int(time.time())),
+        )
 
     def switch_model(self, new_model_name):
         if self.device == "dml":
@@ -40,12 +58,12 @@ class Trainer:
             import torch_directml
             torch_directml.empty_cache()
         self.args.model_name = new_model_name
-        self.args.save_path = os.path.join(r"..\saved_models", self.args.model_name, str(int(time.time())))
+        self.args.save_path = self.default_save_path()
 
     def switch_criterion(self, new_criterion):
         self.args.criterion = new_criterion
         self.criterion_init()
-        self.args.save_path = os.path.join(r"..\saved_models", self.args.model_name, str(int(time.time())))
+        self.args.save_path = self.default_save_path()
 
     def _release_device_resources(self):
         """切换设备前释放旧设备占用（仅当旧设备是 DirectML）。"""
@@ -148,7 +166,9 @@ class Trainer:
         self.model.to(self.device)
         self.optimizer_init()
         self.criterion_init()
-        self.args.save_path = os.path.join(r"..\saved_models", self.args.model_name, str(int(time.time())))
+        # 注意：这里不再改写 save_path。原实现每次 model_init 都把它覆盖成
+        # 硬编码的 ..\saved_models\<model>\<时间戳>，导致显式指定的 --save_path
+        # 在训练开始前被悄悄丢掉。产物目录统一由 run() / switch_* 决定。
 
     def criterion_init(self):
         if self.args.criterion == "CrossEntropyLoss":
@@ -299,6 +319,10 @@ class Trainer:
         )
 
     def run(self):
+        # 没显式指定产物目录时，每次 run() 都开一个新的时间戳目录，
+        # 这样 switch_model / switch_criterion 后的实验不会互相覆盖
+        if not self._explicit_save_path:
+            self.args.save_path = self.default_save_path()
         self.num_classes = self.dataset_init()
         training_losses, training_Top1_accuracies, training_Top5_accuracies, validation_losses, validation_Top1_accuracies, validation_Top5_accuracies, best_val_epoch, best_val_loss = self.run_train()
         if validation_losses is not None:
@@ -438,7 +462,8 @@ if __name__ == "__main__":
     parser.add_argument("--criterion", type=str, default="CrossEntropyLoss")
     parser.add_argument("--optimizer", type=str, default="Adam")
     parser.add_argument("--save_model", type=bool, default=True)
-    parser.add_argument("--save_path", type=str, default=os.path.join(r"..\saved_models", parser.parse_args().model_name, str(int(time.time()))))
+    parser.add_argument("--save_path", type=str, default=None,
+                        help="实验产物目录，默认 saved_models/<dataset>/<model>/<时间戳>")
     parser.add_argument("--input_size", type=tuple, default=(224, 224))
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
