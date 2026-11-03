@@ -1,0 +1,20 @@
+[flake8]
+# Line length is 79: see PEP 8. The codebase is written to this limit.
+max-line-length = 79
+
+# Default is "auto", which spawns a multiprocessing pool when checking several
+# files. That pool fails with PermissionError under a restricted Windows
+# environment, so pin it to a single worker. Equivalent to passing -j 1.
+jobs = 1
+
+# Keep the messages readable and stable.
+format = default
+
+exclude =
+    .git,
+    .vscode,
+    .tmp_build,
+    .tmp_tests,
+    __pycache__,
+    data,
+    saved_models
