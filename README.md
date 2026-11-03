@@ -46,9 +46,12 @@ pip install -r requirements.txt
 | 位置 | 内容 | 是否入库 |
 |---|---|---|
 | `..\data\Mini-ImageNet-Dataset\` | ImageNet 图像，按 split/label 分目录 | ❌ 仓库外 |
+| `dataset\barber.csv` | 切分前的原始标注（6527 行） | ✅ |
 | `dataset\barcode_{train,val,test}.csv` | 条码切分结果（4569/979/979 行） | ✅ |
-| `dataset\barber.csv` | 切分前的原始标注（6527 行） | ❌ 未跟踪 |
 | `..\saved_models\<数据集>\<模型>\<时间戳>\` | 训练产物 | ❌ 仓库外 |
+
+`barber.csv` 的 `image_path` 列是绝对路径（作者本机 `D:\...`）。换机器后
+需要重跑 `split_barcode.py`，或自行改写该列再切分。
 
 单次实验的产物：
 
