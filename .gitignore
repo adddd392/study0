@@ -8,6 +8,12 @@ venv/
 saved_models/
 runs/
 *.pth
+
+# Office 临时锁文件（打开 PPT/Word/Excel 时自动生成，165 字节左右）
 ~$*
+
+# 本地手工备份，不入库
+_原始备份_*
+
 .vscode/
 .idea/
