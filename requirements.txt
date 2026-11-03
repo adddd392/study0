@@ -1,0 +1,31 @@
+# 本文件锁定的版本 = 报告里所有数字实际跑出来的版本
+# 安装：pip install -r requirements.txt
+# Python 3.10（实测 3.10.20）
+
+# ---- 深度学习 ----
+# PyPI 的 torch==2.4.1 在 Windows 上默认就是 CPU 版；
+# 需要 CUDA 请按 https://pytorch.org 的命令单独装，不要用本文件
+torch==2.4.1
+torchvision==0.19.1
+
+# ---- 数值与数据 ----
+numpy==2.2.6
+pandas==2.3.3
+
+# ---- 图像与增强 ----
+opencv-python==5.0.0.93
+albumentations==2.0.8
+
+# ---- 可视化与进度 ----
+matplotlib==3.10.9
+tqdm==4.68.4
+
+# ---- 模型复杂度统计（profiling.py 用 profile()）----
+# 不锁版本：本机装的是 2.1.6，但没有 dist-info 元数据（pip show thop 查不到），
+# 无法用 == 稳定复现；PyPI 上 thop 最新是 0.1.1，两者的 profile() 接口一致
+thop
+
+# ---- 可选：Windows DirectML（不装也能跑，装了也未必更快）----
+# 实测本机：MobileNetV3@128 0.66 s/批（DML） vs 0.22 s/批（CPU），
+# ResNet-50@224 在 DML 上直接失败。所以默认设备是 cpu，此项仅供实验。
+# torch-directml==0.2.5.dev240914
