@@ -19,7 +19,7 @@ import gc
 import numpy as np
 
 
-class trainer:
+class Trainer:
     def __init__(self, args):
         self.args = args
         self.device = device_utils.resolve_device(args.device)
@@ -411,5 +411,5 @@ if __name__ == "__main__":
     parser.add_argument("--input_size", type=tuple, default=(224, 224))
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
-    trainer_instance = trainer(args)
+    trainer_instance = Trainer(args)
     trainer_instance.run()
