@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from datasets import Mini_ImageNet_Datasets
+from dataset_factory import available_datasets, build_split
 from models import get_model
 import profiling
 import checkpoint
@@ -22,6 +22,10 @@ import numpy as np
 class Trainer:
     def __init__(self, args):
         self.args = args
+        # 数据集名决定走哪个 builder；老配置没有这个字段时退回 Mini-ImageNet
+        self.dataset_name = getattr(args, "dataset", "mini_imagenet")
+        # 输入通道数由训练集声明(dataset_init 里覆盖)，默认 3 兼容 Mini-ImageNet
+        self.in_channels = 3
         self.device = device_utils.resolve_device(args.device)
         self.model = None
         # self.model_init()
@@ -65,30 +69,37 @@ class Trainer:
         if self.model is not None:
             self.model.to(self.device)
 
-    def _build_split(self, split, csv_file, label_to_index_map, shuffle):
-        """按指定 split 建数据集与 DataLoader，返回 (dataset, loader)。
+    def _build_split(self, split, label_to_index_map, shuffle):
+        """按当前数据集构建一份 split 的 dataset 与 DataLoader。
 
-        label_to_index_map 传 None 时用本 split 的 csv 自建（仅限训练集）；
+        数据集的具体类型由 dataset_factory 的注册表决定，这里只负责
+        "建 DataLoader" 这一件事，不再出现任何具体数据集类的名字。
+
+        label_to_index_map 传 None 时由该 split 自己建映射（仅限训练集）；
         val/test 必须传入训练集的映射，否则类别下标会与训练错位。
         """
-        data_root = os.path.join(self.args.data_root, split)
-        dataset = Mini_ImageNet_Datasets(csv_file=csv_file,
-                                         data_root=data_root,
-                                         inputsize=self.args.input_size,
-                                         label_to_index_map=label_to_index_map)
-        loader = DataLoader(dataset,
-                            batch_size=self.args.batch_size,
-                            shuffle=shuffle,
-                            num_workers=8,
-                            pin_memory=True,
-                            persistent_workers=True)
-        return dataset, loader
+        bundle = build_split(
+            self.dataset_name, split, self.args, label_to_index_map
+        )
+        loader = DataLoader(
+            bundle.dataset,
+            batch_size=self.args.batch_size,
+            shuffle=shuffle,
+            num_workers=getattr(self.args, "num_workers", 8),
+            pin_memory=True,
+            persistent_workers=getattr(self.args, "num_workers", 8) > 0,
+            # 数据集自己声明的话就挂上（BarcodeDataset 用它关掉 cv2 线程池，
+            # 否则每个 worker 里 OpenCV 会和 PyTorch 抢 CPU 核）
+            worker_init_fn=getattr(bundle.dataset, "worker_init_fn", None),
+        )
+        return bundle, loader
 
     def dataset_init(self):
         """建立 train/val/test 的数据集与 DataLoader，返回类别数。
 
-        三份数据共用同一个 label_to_index_map（由 train.csv 按标签首次出现
-        顺序生成），保证 val/test 的类别下标语义与训练一致。
+        三份数据共用同一个类别映射（训练集产生），保证 val/test 的下标语义
+        与训练一致。输入通道数也由数据集的 builder 声明，写进 self.in_channels，
+        后面 model_init 按它建模型。
         """
         if not self.args.use_train_csv and (
             self.args.use_val_csv or self.args.use_test_csv
@@ -99,27 +110,29 @@ class Trainer:
             )
         label_to_index_map = None
         if self.args.use_train_csv:
-            self.train_dataset, self.train_loader = self._build_split(
+            bundle, self.train_loader = self._build_split(
                 split="train",
-                csv_file=self.args.train_csv,
                 label_to_index_map=label_to_index_map,
                 shuffle=True
             )
-            label_to_index_map = self.train_dataset.get_map()
+            self.train_dataset = bundle.dataset
+            label_to_index_map = bundle.label_to_index_map
+            # 通道数跟着数据走：灰度数据集就是 1，模型第一层据此构建
+            self.in_channels = bundle.in_channels
         if self.args.use_val_csv:
-            self.val_dataset, self.val_loader = self._build_split(
+            bundle, self.val_loader = self._build_split(
                 split="val",
-                csv_file=self.args.val_csv,
                 label_to_index_map=label_to_index_map,
                 shuffle=False
             )
+            self.val_dataset = bundle.dataset
         if self.args.use_test_csv:
-            self.test_dataset, self.test_loader = self._build_split(
+            bundle, self.test_loader = self._build_split(
                 split="test",
-                csv_file=self.args.test_csv,
                 label_to_index_map=label_to_index_map,
                 shuffle=False
             )
+            self.test_dataset = bundle.dataset
         return len(label_to_index_map)
 
     def optimizer_init(self):
@@ -129,7 +142,9 @@ class Trainer:
             raise ValueError("Wrong optimizer name")
 
     def model_init(self, num_classes):
-        self.model = get_model(self.args.model_name, num_classes)
+        self.model = get_model(
+            self.args.model_name, num_classes, in_channels=self.in_channels
+        )
         self.model.to(self.device)
         self.optimizer_init()
         self.criterion_init()
@@ -330,7 +345,10 @@ class Trainer:
         注意：thop.profile 返回的是 macs（乘加次数），不是 FLOPs。
         按惯例 1 mac ≈ 2 FLOPs，需要 FLOPs 时自行乘 2。
         """
-        macs, params = profiling.get_model_macs_and_parameters(self.model, (1, 3, *self.args.input_size))
+        macs, params = profiling.get_model_macs_and_parameters(
+            self.model,
+            (1, self.in_channels, *self.args.input_size),
+        )
         profiling.save_macs_and_parameters(macs, params, self.args.save_path)
         return macs, params
 
@@ -399,6 +417,13 @@ class Trainer:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default="Resnet-50")
+    parser.add_argument("--dataset", type=str, default="mini_imagenet",
+                        choices=available_datasets(),
+                        help="数据集名，决定走哪个 builder")
+    parser.add_argument("--keep_grayscale", type=bool, default=True,
+                        help="条码数据集是否保持单通道（决定模型第一层通道数）")
+    parser.add_argument("--num_workers", type=int, default=8,
+                        help="DataLoader 工作进程数，0 表示主进程加载")
     parser.add_argument("--data_root", type=str, default=r"..\data\Mini-ImageNet-Dataset")
     parser.add_argument("--use_train_csv", type=bool, default=True)
     parser.add_argument("--train_csv", type=str, default=r"..\data\Mini-ImageNet-Dataset\train.csv")
