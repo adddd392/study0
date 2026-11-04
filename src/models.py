@@ -34,6 +34,29 @@ FIRST_CONV_PATHS = {
 # 支持替换的输入通道数。3 是原生通道数；1 用于灰度条码。
 SUPPORTED_IN_CHANNELS = (1, 3)
 
+# BatchNorm running 统计量的动量，统一成 PyTorch 默认值 0.1。
+#
+# 为什么需要这么一行：torchvision 的 MobileNetV3 用的是 TensorFlow 版配方
+#     torchvision/models/mobilenetv3.py:154
+#     norm_layer = partial(nn.BatchNorm2d, eps=0.001, momentum=0.01)
+# 动量 0.01 意味着 running 统计量每步只向真实值挪 1%，初值(mean=0,var=1)的
+# 残留比例是 0.99^步数，时间常数约 100 步。
+#
+# 本项目的训练预算远小于这个配方的假设：batch_size=32 时一轮只有 143 步。
+# 实测（barcode_mobilenet_128 第 1 轮）：
+#     瞬时 batch 方差恒为 0.079，而 running_var 从 1.0 只降到 0.299
+#     即 eval 时的归一化参数里还残留 24% 的初始化值，46 层 BN 一路串联放大，
+#     分类头退化：验证/测试准确率恒为 77.02%（= 全猜多数类 EAN13 的 754/979）
+#     把统计量换成用训练集重算的正确值后，同一份权重是 94.38%（DML）/95.61%（CPU）
+# 结论：权重是好的，坏的是评估时喂给网络的归一化参数。
+#
+# 改成 0.1 后，143 步的残留是 0.9^143≈3e-6，第 1 轮结束时统计量已完全收敛，
+# 于是"第 1 轮就能拿到可信的验证指标"，模型选择（按 val loss 选最佳 epoch）
+# 也不再建立在失真指标上。
+#
+# eps 故意保持 torchvision 的 0.001 不动：一次只动一个变量，便于归因。
+BN_MOMENTUM = 0.1
+
 
 def available_models() -> list:
     """返回可用模型名列表。"""
@@ -135,6 +158,24 @@ def _adapt_first_conv(model, model_name, in_channels):
     return model
 
 
+def set_bn_momentum(model, momentum=BN_MOMENTUM):
+    """把所有 BatchNorm 的 running 统计量动量统一设为 momentum。
+
+    只改 momentum，不动 eps / affine / track_running_stats：
+    归一化的形式不变，改变的只是"统计量跟随数据的速度"。
+
+    MobileNetV3 出厂是 0.01（见 BN_MOMENTUM 的注释），改成 0.1 后
+    running 统计量在十几步内就贴近真实分布，第 1 轮的 eval 指标即可信。
+    ResNet 等本来就是 0.1 的模型调用本函数是空操作。
+
+    返回模型本身，方便链式调用。
+    """
+    for module in model.modules():
+        if isinstance(module, nn.modules.batchnorm._BatchNorm):
+            module.momentum = momentum
+    return model
+
+
 def get_model(model_name, num_classes, in_channels=3) -> nn.Module:
     """返回指定架构、指定类别数与输入通道数的模型实例。
 
@@ -147,4 +188,7 @@ def get_model(model_name, num_classes, in_channels=3) -> nn.Module:
     if model_name not in MODEL_BUILDERS:
         raise ValueError(f"Wrong model_name,可选：{available_models()}")
     model = MODEL_BUILDERS[model_name](num_classes)
+    # 必须在返回前统一动量：漏掉这一步，MobileNetV3 会带着 0.01 的动量
+    # 训练，短预算下 eval 指标整体失真（见 BN_MOMENTUM 注释）
+    set_bn_momentum(model, BN_MOMENTUM)
     return _adapt_first_conv(model, model_name, in_channels)

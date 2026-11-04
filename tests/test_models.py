@@ -23,6 +23,7 @@ if _SRC not in sys.path:
 
 import torch  # noqa: E402
 
+import models as models_module  # noqa: E402
 from models import (  # noqa: E402
     FIRST_CONV_PATHS,
     _adapt_first_conv,
@@ -177,12 +178,66 @@ def case_invalid_arguments() -> None:
     print("非法参数校验: OK")
 
 
+def case_bn_momentum_unified() -> None:
+    """所有模型的 BatchNorm 动量必须统一为 BN_MOMENTUM。
+
+    这条是"评估指标失真"事故的防复发测试。torchvision 的 MobileNetV3
+    出厂动量是 0.01（TensorFlow 配方），本项目的训练预算只有每轮 143 步，
+    running 统计量根本收敛不了，于是：
+        - 训练指标正常（train 模式用 batch 统计量，自洽）
+        - 验证/测试指标恒为多数类比例（eval 模式用了错的 running 统计量）
+    实测症状：连续 3 轮验证准确率一字不差 77.02%，检查点里的 running_var
+    比用训练集重算的真实值大 4~22 倍。
+
+    动量统一后，143 步的初值残留从 24% 降到 3e-6，第 1 轮指标即可信。
+    """
+    checked = []
+    for name in available_models():
+        model = get_model(name, NUM_CLASSES)
+        momentums = {
+            module.momentum
+            for module in model.modules()
+            if isinstance(module, torch.nn.modules.batchnorm._BatchNorm)
+        }
+        if not momentums:
+            # ConvNeXt 用 LayerNorm，没有 BN，天然不存在统计量滞后问题
+            print(f"{name}: 无 BatchNorm（用 LayerNorm），跳过")
+            continue
+        assert momentums == {models_module.BN_MOMENTUM}, (
+            f"{name} 的 BN 动量未统一: {sorted(momentums)}"
+            f" != {{{models_module.BN_MOMENTUM}}}"
+        )
+        checked.append(name)
+        print(f"{name}: BN 动量 {momentums.pop()} OK")
+    assert checked, "没有任何模型含 BatchNorm，测试前提不成立"
+
+
+def case_bn_momentum_helper() -> None:
+    """set_bn_momentum 只改动量，不动 eps 与其它归一化参数。"""
+    # 造一个"出厂动量 0.01"的 BN，模拟 MobileNetV3 的情况
+    module = torch.nn.BatchNorm2d(
+        8, eps=0.001, momentum=0.01
+    )
+    assert module.momentum == 0.01
+
+    wrapper = torch.nn.Sequential(module)
+    models_module.set_bn_momentum(wrapper, 0.1)
+
+    assert module.momentum == 0.1, f"动量未改: {module.momentum}"
+    assert module.eps == 0.001, f"eps 不该被改动: {module.eps}"
+    assert module.affine is True, "affine 不该被改动"
+    assert module.track_running_stats is True, "track_running_stats 不该被改动"
+    print("set_bn_momentum: 只改动量 OK")
+
+
 def main() -> int:
     case_headers_and_params()
     case_grayscale_forward()
     case_grayscale_weight_is_sum()
     case_grayscale_matches_replicated_rgb()
     case_invalid_arguments()
+    case_bn_momentum_unified()
+    case_bn_momentum_helper()
     print("全部通过")
     return 0
 

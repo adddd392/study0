@@ -339,6 +339,24 @@ class Trainer:
             training_Top5_accuracies.append(train_Top5_acc)
             if self.args.use_val_csv:
                 val_loss, val_Top1_acc, val_Top5_acc = self.validate()
+                # 先告警再记录：连续两轮验证准确率一字不差，几乎总是
+                # 评估链路失效（如 BN running 统计量未收敛），而不是模型停滞
+                if validation_looks_frozen(
+                    validation_Top1_accuracies, val_Top1_acc
+                ):
+                    print(
+                        "[警告] 验证准确率与上一轮完全相同"
+                        f"（{val_Top1_acc:.2f}%），评估可能已失效。"
+                    )
+                    print(
+                        "       真实训练中验证准确率几乎不会连续两轮一字"
+                        "不差；常见原因是 BatchNorm 的 running 统计量"
+                        "未收敛（动量过小或步数太少），"
+                    )
+                    print(
+                        "       此时训练指标正常但 eval 用的是错误的"
+                        "归一化参数，请核对 src/models.py 的 BN_MOMENTUM。"
+                    )
                 validation_losses.append(val_loss)
                 validation_Top1_accuracies.append(val_Top1_acc)
                 validation_Top5_accuracies.append(val_Top5_acc)
@@ -603,6 +621,30 @@ class Trainer:
 
         # 返回平均值，保持和你原来接口一致
         return mean_lat
+
+
+def validation_looks_frozen(previous_accuracies, current_accuracy,
+                            tolerance=1e-9):
+    """判断本轮验证准确率是否与上一轮完全相同。
+
+    为什么需要这个判断：真实训练里验证准确率几乎不可能连续两轮一字不差。
+    一旦出现，几乎总是**评估链路失效**，而不是模型"卡住了"。本项目踩过的
+    具体例子是 BatchNorm 的 running 统计量未收敛（动量 0.01 + 每轮只有
+    143 步），于是 eval 模式用的是错的归一化参数，模型对任何输入都输出
+    同一类，验证准确率被钉死在多数类比例上（77.02% = 754/979）。
+    当时连续三轮一模一样，但因为没人看这个信号，整条训练曲线被误读成
+    "模型前几轮完全没学会"。
+
+    参数:
+        previous_accuracies: 历史验证准确率列表（百分点或 0~1 均可）。
+        current_accuracy: 本轮验证准确率。
+        tolerance: 视为"相同"的绝对误差。
+    返回:
+        bool，True 表示与上一轮相同（需要告警）。
+    """
+    if not previous_accuracies:
+        return False
+    return abs(current_accuracy - previous_accuracies[-1]) <= tolerance
 
 
 def _str2bool(value):
