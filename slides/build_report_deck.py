@@ -382,7 +382,7 @@ def build_bc_negative(prs):
     callout(slide, Inches(7.1), Inches(5.25), Inches(5.6), Inches(1.55),
             "教训：当基线错误数已是个位数量级时，"
             "「再调一个损失函数」几乎不可能被检出 —— "
-            "要么换更大的训练集，要么换问题（见第二部分）。",
+            "要么换更大的训练集，要么换问题（见后文一维剖面）。",
             fs=12, fill=RGBColor(0xEA, 0xF1, 0xF8), edge=BLUE)
     finish_slide(slide, BC_NOTE)
     return slide
