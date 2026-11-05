@@ -1,4 +1,4 @@
-"""profile.py 的黄金测试。
+"""profile1d.py 的黄金测试。
 
 锁定六件事：
     1. 列投影保持宽度、且等于"每列沿行的平均值"
@@ -10,7 +10,7 @@
 
 运行::
 
-    python tests/test_profile.py
+    python tests/test_profile1d.py
 """
 
 import os
@@ -22,7 +22,7 @@ _SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from profile import (  # noqa: E402
+from profile1d import (  # noqa: E402
     HP_FRAC,
     column_profile,
     extract_profile,
