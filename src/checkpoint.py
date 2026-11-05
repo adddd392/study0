@@ -23,10 +23,21 @@ import torch
 # 保存目录下存放权重文件的子目录名
 MODELS_DIRNAME = "models"
 
+# "最后一轮"权重的固定文件名。它每轮被覆盖写，所以训练结束时文件里就是
+# 最后一轮的权重。与按验证损失选出的 best 检查点分开，因为两者回答不同问题：
+#     model_epoch_<N>.pth -> 被选中的模型，用于复现报告的测试指标
+#     model_last.pth      -> 训练结束时的模型，用于观察收敛终点或继续训练
+LAST_CHECKPOINT_NAME = "model_last.pth"
+
 
 def checkpoint_path(save_dir, epoch):
     """构造某轮次权重的完整路径（不检查文件是否存在）。"""
     return os.path.join(save_dir, MODELS_DIRNAME, f"model_epoch_{epoch}.pth")
+
+
+def last_checkpoint_path(save_dir):
+    """构造"最后一轮"权重的路径（固定文件名，会被反复覆盖）。"""
+    return os.path.join(save_dir, MODELS_DIRNAME, LAST_CHECKPOINT_NAME)
 
 
 def _to_cpu_state_dict(state_dict):
@@ -58,6 +69,26 @@ def save_checkpoint(model, save_dir, epoch):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # 必须转 CPU 后再存：DML 张量会写出设备相关的重建记录，
     # 加载端 weights_only=True 无法解析（详见模块 docstring）
+    torch.save(_to_cpu_state_dict(model.state_dict()), path)
+    return path
+
+
+def save_last_checkpoint(model, save_dir):
+    """保存"最后一轮"权重到固定文件名，每轮覆盖写。
+
+    与 save_checkpoint 的唯一区别是文件名不含轮次，所以不随轮数增加而堆积
+    文件；落盘规则（先转 CPU、用 state_dict）与 save_checkpoint 完全一致，
+    加载时不区分两者。
+
+    参数:
+        model: 待保存的模型
+        save_dir: 本次训练的保存目录
+    返回:
+        写入的 .pth 文件完整路径
+    """
+    path = last_checkpoint_path(save_dir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # 与 save_checkpoint 一样先转 CPU：DML 张量会写出设备重建记录
     torch.save(_to_cpu_state_dict(model.state_dict()), path)
     return path
 

@@ -125,6 +125,15 @@ class ExperimentConfig:
 
     # ---- 产物 ----
     save_model: bool = True
+    """是否保存**按验证损失选出的最佳轮**权重（model_epoch_<N>.pth）。"""
+
+    save_last: bool = False
+    """是否额外保存**最后一轮**的权重（固定文件名 model_last.pth，每轮覆盖）。
+
+    默认关闭，因为大多数实验只需要最佳轮那份；需要"训练结束时的模型"
+    （继续训练、观察收敛终点）时打开。与 save_model 互相独立：
+    save_model=False + save_last=True 也能只留最后一轮。
+    """
 
     save_path: Optional[str] = None
     """None 表示由 Trainer 生成 saved_models/<dataset>/<model>/<时间戳>。

@@ -151,11 +151,46 @@ def case_device_independent_save() -> None:
     print("设备无关保存: OK  （含 DirectML 真实回归）")
 
 
+def case_save_last_overwrites() -> None:
+    """model_last.pth 必须每轮被覆盖，最后留下的是最新一轮的权重。
+
+    "最后一轮"与"最佳轮"是两个不同的问题，文件名也必须分开：
+    model_epoch_<N>.pth 按轮次积累，model_last.pth 只有一个。
+    """
+    with temp_dir() as tmp:
+        model = nn.Linear(3, 2)
+
+        # 第一轮：权重全 1.0
+        with torch.no_grad():
+            model.weight.fill_(1.0)
+        path = checkpoint.save_last_checkpoint(model, tmp)
+        expected = os.path.join(tmp, "models", "model_last.pth")
+        assert path == expected, f"路径不符: {path} != {expected}"
+        assert torch.equal(
+            checkpoint.load_checkpoint(path)["weight"], model.weight
+        ), "第一轮权重往返不一致"
+
+        # 第二轮：权重全 2.0，应覆盖同一文件
+        with torch.no_grad():
+            model.weight.fill_(2.0)
+        checkpoint.save_last_checkpoint(model, tmp)
+
+        reloaded = checkpoint.load_checkpoint(path)["weight"]
+        assert torch.equal(reloaded, model.weight), "未覆盖成第二轮权重"
+        assert float(reloaded[0, 0]) == 2.0, f"残留旧值: {float(reloaded[0, 0])}"
+
+        # 只有一个文件，不随轮数堆积
+        saved = os.listdir(os.path.join(tmp, "models"))
+        assert saved == ["model_last.pth"], f"目录里出现了多余文件: {saved}"
+    print("最后一轮覆盖写: OK")
+
+
 def main() -> int:
     case_path_convention()
     case_roundtrip()
     case_weights_only()
     case_device_independent_save()
+    case_save_last_overwrites()
     print("全部通过")
     return 0
 

@@ -407,6 +407,13 @@ class Trainer:
                 best_val_loss = val_loss
                 best_val_epoch = epoch + 1
                 self.best_model_path = self.save_model(epoch + 1)
+            # 额外保存"最后一轮"权重：覆盖写 model_last.pth，训练结束时文件里
+            # 就是第 num_epochs 轮的模型。放在这里（而不是 else 分支）是刻意
+            # 让两个开关互不影响：最佳轮与最后一轮常常不是同一轮。
+            if self.args.save_last:
+                self.last_model_path = checkpoint.save_last_checkpoint(
+                    self.model, self.args.save_path
+                )
         # 没有验证集时把三个空列表统一换成 None。调用方（绘图、results.txt）
         # 都用 "is not None" 判断有没有验证曲线；空列表不为 None，会被当成
         # "有验证数据但长度是 0"，绘图时因长度与训练曲线不一致而报错。
@@ -731,6 +738,7 @@ if __name__ == "__main__":
     parser.add_argument("--criterion", type=str, default=None)
     parser.add_argument("--optimizer", type=str, default=None)
     parser.add_argument("--save_model", type=_str2bool, default=None)
+    parser.add_argument("--save_last", type=_str2bool, default=None)
     parser.add_argument("--save_path", type=str, default=None)
     parser.add_argument("--input_size", type=int, nargs=2, default=None,
                         metavar=("H", "W"))
