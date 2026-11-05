@@ -247,7 +247,7 @@ def finish_slide(slide, note):
 
 # ---------------------------------------------------------------- 新页：总纲
 def build_cover(prs):
-    """封面：两条主线 + 三个关键数字。"""
+    """封面：标题 + 并列陈述两件事 + 三个关键数字。"""
     slide = prs.slides.add_slide(blank_layout(prs))
     band = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(0.34), H)
     band.fill.solid()
@@ -255,21 +255,21 @@ def build_cover(prs):
     band.line.fill.background()
     band.shadow.inherit = False
 
-    tb(slide, Inches(1.35), Inches(1.55), Inches(10), Inches(0.3),
-       "第三周汇报  ·  2026-11", size=12, color=GRAY)
-    tb(slide, Inches(1.35), Inches(2.05), Inches(10.5), Inches(1.5),
-       "从分割头源码到条码实验：\n两条线上的「对比怎么做才可信」",
-       size=34, bold=True, line_spacing=1.25)
+    tb(slide, Inches(1.35), Inches(1.50), Inches(10), Inches(0.3),
+       "2026-11-05", size=12, color=GRAY)
+    tb(slide, Inches(1.35), Inches(1.95), Inches(10.5), Inches(0.85),
+       "第三周汇报", size=40, bold=True)
     line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.35),
-                                  Inches(3.95), Inches(1.6), Pt(4))
+                                  Inches(2.95), Inches(1.6), Pt(4))
     line.fill.solid()
     line.fill.fore_color.rgb = ORANGE
     line.line.fill.background()
     line.shadow.inherit = False
-    tb(slide, Inches(1.35), Inches(4.25), Inches(10.6), Inches(0.9),
-       "① YOLO11 → YOLO26 实例分割头：源码级对比 + CPU 实测\n"
-       "② 条码码制分类：基线、负结果、划分反转、一维剖面",
-       size=15, color=INK, line_spacing=1.5)
+    # 两件事分别陈述，不做归纳：各自写清做了什么
+    tb(slide, Inches(1.35), Inches(3.25), Inches(10.6), Inches(1.0),
+       "一、YOLO11 → YOLO26 实例分割头：结构差异与 CPU 实测\n"
+       "二、条码码制分类：基线、负结果、划分反转与一维剖面",
+       size=17, color=INK, line_spacing=1.6)
 
     stat_blocks(slide, Inches(5.75), [
         ("26 页", "分割头 10 · 条码 12 · 附录 4"),
@@ -283,9 +283,9 @@ def build_cover(prs):
 
 
 def build_agenda(prs):
-    """目录：两条主线各自的子问题。"""
+    """目录：两部分各自的子问题，逐条陈述。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "目录", "两件事，同一个方法论")
+    header(slide, "目录", "两部分的内容")
 
     tb(slide, MARGIN, Inches(1.75), Inches(6.0), Inches(0.3),
        "第一部分  ·  YOLO26 分割头", size=13, bold=True, color=BLUE)
@@ -305,10 +305,11 @@ def build_agenda(prs):
         "一维剖面：差距到底来自信息还是训练",
     ], size=13, dot=ORANGE)
 
+    # 只交代页码与内容范围，不做跨部分的归纳
     callout(slide, MARGIN, Inches(5.2), CONTENT_W, Inches(1.05),
-            "贯穿两条线的问题是同一个：要比较的东西，变量是不是只有一个？"
-            "分割头那边是「结构变、接口不变」；条码这边是「表示变、分类器或训练"
-            "配方不变」。任意两个变量一起动，结论就不可信。", fs=13)
+            "第一部分（分割头）P3–P12，资料与附录 P23–P26；"
+            "第二部分（条码）P13–P22。两部分内容相互独立，"
+            "各自给出问题、方法、数据与结论。", fs=13)
     finish_slide(slide, "第三周汇报 · 目录")
     return slide
 
@@ -613,8 +614,8 @@ def build_bc_1d_result(prs):
 def build_bc_lessons(prs):
     """B8：方法学教训。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 08", "三条方法论：这次真正学到的东西",
-           "数字会过时，判断方法不会")
+    header(slide, "条码 · 08", "三个把变量控制住的做法",
+           "三条都是本轮实验里实际采用的做法")
 
     items = [
         ("比较「表示」→ 固定分类器",
