@@ -290,10 +290,19 @@ def main(argv=None):
               % (epoch, args.num_epochs, train_loss, val_loss,
                  100.0 * (val_report["accuracy"] or 0.0), elapsed))
         if val_loss < best["val_loss"]:
+            previous = best["path"]
             best.update(epoch=epoch, val_loss=val_loss)
             best["path"] = checkpoint.save_checkpoint(
                 model, args.save_path, epoch
             )
+            # 每改善一次就存一个文件、却不删旧的，一个 run 会堆到 10 个
+            # 16 MB 的权重（实测把测试目录撑到 4.3 GB）。这里只保留当前
+            # 最佳，旧的立刻删掉。
+            if previous and previous != best["path"]:
+                try:
+                    os.remove(previous)
+                except OSError:
+                    pass
         if args.save_last:
             checkpoint.save_last_checkpoint(model, args.save_path)
 
