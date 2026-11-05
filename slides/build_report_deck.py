@@ -2,9 +2,9 @@
 
 设计要点
 --------
-1. **两册各自成册，首尾相接**：前 14 页是分割头 deck 原样保留（含它
-   自己的封面与附录），后 10 页是条码部分自己的封面 + 8 页内容 + 收尾。
-   不做统一封面/目录/总结，两部分互不引用。
+1. **两册各自成册，首尾相接**：第一册只留分割头的学习对比（封面、
+   差异①–④、实测、结论、过程①②），底座里的前置结构页与附录按需裁掉；
+   第二册是条码部分自己的封面 + 内容 + 收尾。两部分互不引用。
 2. 新页的视觉参数（字号、留白、表头色、页脚）与底座完全一致，
    靠复刻同一个调色板与 helper 实现。
 3. 页码在重排后会错位，所以最后统一重刷右下角的页码文本框。
@@ -790,21 +790,53 @@ def refresh_page_numbers(prs):
                 shape.text_frame.paragraphs[0].runs[0].text = str(page)
 
 
-def reorder_slides(prs, order):
-    """按 order（0 基下标列表）重排幻灯片顺序。
+def drop_slides(prs, indexes):
+    """按 0 基下标删除幻灯片，并把它的 part 关系一并摘掉。
 
-    只调整 ``sldIdLst`` 的元素次序，不复制/删除任何 part，
-    因此图片、图表、备注都原样保留。
+    只从 ``sldIdLst`` 移除是不够的 —— slide part 会留在包里成为孤儿，
+    表现为文件体积不减。这里先 drop_rel 再移除元素。
     """
     sld_ids = prs.slides._sldIdLst
-    elements = list(sld_ids)
-    if len(order) != len(elements):
-        raise ValueError("重排下标的数量 (%d) 与页数 (%d) 不一致"
-                         % (len(order), len(elements)))
-    for element in elements:
+    rel_ns = ("http://schemas.openxmlformats.org/officeDocument/2006/"
+              "relationships")
+    for index in sorted(indexes, reverse=True):
+        element = sld_ids[index]
+        rel_id = element.get("{%s}id" % rel_ns)
+        prs.part.drop_rel(rel_id)
         sld_ids.remove(element)
-    for index in order:
-        sld_ids.append(elements[index])
+
+
+def prune_base_deck(prs):
+    """把底座 deck 裁成「分割头学习对比」这一段。
+
+    底座原顺序（14 页）：
+      0 封面 | 1-3 结构①②③ | 4-7 差异①–④ | 8 实测 | 9 结论 | 10-13 附录
+    保留 0 与 4-9，删掉 1-3 与 10-13。
+    """
+    drop_slides(prs, [10, 11, 12, 13])   # 先删靠后的附录，下标不失效
+    drop_slides(prs, [1, 2, 3])          # 再删前置的结构页
+
+
+def fix_cover_reference(prs):
+    """封面原本写「脚本见附录」，附录已删，把这个指向去掉。"""
+    for shape in prs.slides[0].shapes:
+        if not shape.has_text_frame:
+            continue
+        for paragraph in shape.text_frame.paragraphs:
+            for run in paragraph.runs:
+                if "脚本见附录" in run.text:
+                    run.text = run.text.replace("，脚本见附录", "")
+
+
+def renumber_slide_parts(prs):
+    """把 slide 部件名重排成 slide1..slideN。
+
+    python-pptx 新建页时用 ``slide(len(sldIdLst)+1).xml`` 命名，
+    所以只要先删过页，新页的名字就会和残存的 slide8/9/10 撞车，
+    保存出来的 zip 里会出现重名条目。这里按当前页序统一重排。
+    """
+    r_ids = [sld_id.rId for sld_id in prs.slides._sldIdLst]
+    prs.part.rename_slide_parts(r_ids)
 
 
 def main():
@@ -812,39 +844,35 @@ def main():
         print("找不到底座 deck: %s" % BASE_PPTX)
         return 1
     prs = Presentation(str(BASE_PPTX))
-    base_count = len(prs.slides)
-    print("  第一册（分割头）: 底座 deck %d 页" % base_count)
+    print("  底座 deck: %d 页" % len(prs.slides))
+    prune_base_deck(prs)
+    fix_cover_reference(prs)
+    print("  裁剪后（分割头学习对比）: %d 页" % len(prs.slides))
 
-    # 先按追加顺序生成新页，最后统一重排
-    build_p1_process_a(prs)      # new[0] 分割头 过程①
-    build_p1_process_b(prs)      # new[1] 分割头 过程②
-    build_part2_cover(prs)       # new[2] 条码封面
-    build_bc_setup(prs)          # new[3]
-    build_bc_win(prs)            # new[4]
-    build_bc_negative(prs)       # new[5]
-    build_bc_split(prs)          # new[6]
-    build_bc_mirror(prs)         # new[7]
-    build_bc_1d_design(prs)      # new[8]
-    build_bc_1d_result(prs)      # new[9]
-    build_bc_lessons(prs)        # new[10]
-    build_bc_process_a(prs)      # new[11] 条码 09
-    build_bc_process_b(prs)      # new[12] 条码 10
-    build_part2_next(prs)        # new[13] 条码 11
+    # 分割头的两页「过程」直接接在结论之后
+    build_p1_process_a(prs)
+    build_p1_process_b(prs)
+
+    # 第二册（条码）接着排
+    build_part2_cover(prs)
+    build_bc_setup(prs)
+    build_bc_win(prs)
+    build_bc_negative(prs)
+    build_bc_split(prs)
+    build_bc_mirror(prs)
+    build_bc_1d_design(prs)
+    build_bc_1d_result(prs)
+    build_bc_lessons(prs)
+    build_bc_process_a(prs)
+    build_bc_process_b(prs)
+    build_part2_next(prs)
 
     total = len(prs.slides)
-    base_idx = list(range(base_count))
-    new_idx = list(range(base_count, total))
-
-    # 底座前 10 页是正文，后 4 页是附录；分割头的两页过程插在结论之后、
-    # 附录之前，其余新页（条码这册）整体接在后面。
-    order = (base_idx[:10] + [new_idx[0], new_idx[1]] + base_idx[10:] +
-             new_idx[2:])
-    reorder_slides(prs, order)
+    renumber_slide_parts(prs)   # 先重排部件名，再刷页码
     refresh_page_numbers(prs)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     prs.save(str(OUT_PPTX))
-    print("  新增 %d 页（分割头过程 2 页 + 条码 12 页）" % (total - base_count))
     print("  总计 %d 页 -> %s" % (total, OUT_PPTX))
     return 0
 
