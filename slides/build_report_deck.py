@@ -255,11 +255,14 @@ def build_part2_cover(prs):
     left = ["01  实验设定：数据、配方、判据",
             "02  唯一有效的改动 128 → 224",
             "03  五个负结果：都不显著",
-            "04  划分反转复核：方向能复现吗"]
-    right = ["05  镜像复核：三个干预重跑",
-             "06  一维剖面：设计与预注册",
-             "07  结果与两轮诊断",
-             "08  三个把变量控制住的做法"]
+            "04  划分反转复核：方向能复现吗",
+            "05  镜像复核：三个干预重跑",
+            "06  一维剖面：设计与预注册"]
+    right = ["07  结果与两轮诊断",
+             "08  三个把变量控制住的做法",
+             "09  五次让结论作废的错误",
+             "10  操作层面的错误与规则",
+             "11  局限与下一步"]
     for column, items in ((Inches(1.35), left), (Inches(7.0), right)):
         y = Inches(4.78)
         for item in items:
@@ -602,7 +605,7 @@ def build_bc_lessons(prs):
 def build_part2_next(prs):
     """条码部分的收尾页：只讲这部分的局限与下一步。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 09", "局限与下一步", "都只针对本部分的实验")
+    header(slide, "条码 · 11", "局限与下一步", "都只针对本部分的实验")
 
     tb(slide, MARGIN, Inches(1.78), Inches(6.0), Inches(0.3),
        "局限", size=13, bold=True, color=BLUE)
@@ -630,6 +633,141 @@ def build_part2_next(prs):
     return slide
 
 
+def build_p1_process_a(prs):
+    """分割头 过程①：把笔记里 23 处更正里代表性的 7 条列出来。"""
+    slide = prs.slides.add_slide(blank_layout(prs))
+    header(slide, "过程 ①", "23 处更正：错在哪儿、怎么改的",
+           "来自 9 组自测题 —— 先自己写答案，再逐条对源码")
+
+    col_w = [Inches(0.95), Inches(3.05), Inches(4.75), Inches(2.6)]
+    table(slide, [
+        ["题号", "我原来的答案", "更正后", "依据"],
+        ["Q1.1", "1280 输入写成 160² + 60² + 20²",
+         "160² + 80² + 40² = 33,600", "stride 8/16/32"],
+        ["Q1.2", "84 里的 4 个通道当成 xyxy",
+         "是 ltrb 边距；64 = 4 边 × 16 bin 的 DFL 分布", "DFL 解码"],
+        ["Q1.3", "漏了 decode；sigmoid 写成 softmax",
+         "先 dist2bbox 解码、逐类 sigmoid、两段 topk 分开", "head.py 推理段"],
+        ["Q1.4", "值是 None，理由是 YAML 开关",
+         "值是 False；YAML 只 deepcopy 出双支", "head.py:141-143"],
+        ["Q2.3", "C3k2「变深」了", "是 repeats 2→1：2,234,368 → 1,712,640",
+         "参数实测 −23%"],
+        ["Q4.2", "权重写成 0.1·o2o + 0.9·o2m",
+         "写反了：o2m 0.8→0.1，o2o 0.2→0.9", "trainer.py:643"],
+        ["Q4.3", "日志 loss 就是总损失", "日志只来自 o2o，反传是加权和",
+         "loss.py:1305"],
+        ["Q5.3", "两版延迟都按 o2m 前向比",
+         "26 测的是 nms=False 的 o2o 图", "论文脚注口径"],
+    ], MARGIN, Inches(1.74), col_w, fs=10.5,
+        align_right_cols=(0,), row_h=Inches(0.40))
+
+    callout(slide, MARGIN, Inches(5.60), CONTENT_W, Inches(0.95),
+            "23 处更正集中在两类：① 源码细节（形状、属性、权重顺序）；"
+            "② 比较口径（跟谁比、怎么测、量纲是否一致）。两类都不是「看不懂」，"
+            "而是「看漏了 + 想当然」。", fs=12.5)
+    finish_slide(slide, "ultralytics 8.4.184 · torch 2.4.1+cpu · "
+                        "出处：YOLO26-笔记模块与自测题库.md")
+    return slide
+
+
+def build_p1_process_b(prs):
+    """分割头 过程②：错误能被找回来的方法，以及一条完整推理链。"""
+    slide = prs.slides.add_slide(blank_layout(prs))
+    header(slide, "过程 ②", "把错找回来的三步",
+           "自测 → 落到行号 → 实测对账")
+
+    tb(slide, MARGIN, Inches(1.74), Inches(6.0), Inches(0.3),
+       "做法", size=13, bold=True, color=BLUE)
+    bullets(slide, MARGIN, Inches(2.10), Inches(5.9), [
+        ("先自测：", "9 组题按章节出，答案是自己先写的，所以错在哪一步可追"),
+        ("每条更正落到文件:行号：", "head.py:141-143、loss.py:1305、"
+         "trainer.py:643 —— 落不到行号的就不算更正"),
+        ("实测对账：", "参数量、延迟、MACs 与源码推算必须一致，"
+         "脚本是 bench_seg_heads.py / bench_seg_lat.py"),
+    ], size=12)
+
+    tb(slide, Inches(7.1), Inches(1.74), Inches(5.6), Inches(0.3),
+       "一条完整的链", size=13, bold=True, color=ORANGE)
+    callout(slide, Inches(7.1), Inches(2.10), Inches(5.6), Inches(2.05),
+            "IoU^6 为什么不是「加大分类权重」：\n"
+            "0.5^6 = 0.0156，0.9^6 = 0.531，相差 34 倍；\n"
+            "同样条件下线性只有 1.8 倍。\n"
+            "→ 它放大的是定位质量差异，而 cls^0.5 反而压低分类分。",
+            fs=12)
+
+    tb(slide, MARGIN, Inches(4.55), Inches(6.0), Inches(0.3),
+       "所以「更正」不止是改结论", size=13, bold=True, color=BLUE)
+    bullets(slide, MARGIN, Inches(4.91), Inches(5.9), [
+        ("改的是判据：", "从「看起来合理」改成「能对上行号与实测量」"),
+        ("改的是口径：", "延迟要写清是哪张图、含不含 NMS、batch 与线程数"),
+        ("留下的是方法：", "下一轮换模型或换任务，这套对账流程可以照搬"),
+    ], size=12)
+    finish_slide(slide, "ultralytics 8.4.184 · torch 2.4.1+cpu · "
+                        "出处：YOLO26-笔记模块与自测题库.md")
+    return slide
+
+
+def build_bc_process_a(prs):
+    """条码 09：让结论作废的四次错误（正确性 bug + 统计纪律）。"""
+    slide = prs.slides.add_slide(blank_layout(prs))
+    header(slide, "条码 · 09", "五次让结论作废的错误",
+           "共同点：不是跑不起来，而是跑起来了但数字是假的")
+
+    col_w = [Inches(2.25), Inches(3.05), Inches(4.05), Inches(2.7)]
+    table(slide, [
+        ["错误", "症状", "根因", "修正"],
+        ["BN 动量沿用 TF 配方", "验证/测试恒为 77.02%，正好等于全猜多数类",
+         "momentum=0.01，143 步/轮残留约 24% 初始化值，46 层串联放大",
+         "统一 0.1（5dfb1fe），历史数字作废"],
+        ["DML 检查点不可加载", "10 轮跑完，加载最佳权重时 UnpicklingError，结果全丢",
+         "DirectML 张量序列化，weights_only=True 不认", "保存前搬 CPU（13acbd7）"],
+        ["错误架构能静默加载", "S16 与原版参数形状相同，load_state_dict 不报错",
+         "审计脚本硬编码架构名", "架构名从实验日志读"],
+        ["单 seed 当结论", "LS 的 seed0 = 99.59%，补 2 个 seed 后 99.18±0.37，t=1.52",
+         "只看一个 seed", "一律 3 seed 同 seed 配对"],
+        ["用「都错的样本」估上限", "S16 一上来就修好 3 个「不可约」样本中的 2 个",
+         "错误集合随架构与 seed 漂移", "不做上限估计"],
+    ], MARGIN, Inches(1.74), col_w, fs=10.5, row_h=Inches(0.62))
+
+    callout(slide, MARGIN, Inches(5.44), CONTENT_W, Inches(0.9),
+            "A1 最典型：损失正常下降、训练准确率正常、验证准确率一字不动。"
+            "所以训练框架里加了「连续两轮验证准确率完全相同就告警」的钩子。",
+            fs=12.5)
+    finish_slide(slide, BC_NOTE)
+    return slide
+
+
+def build_bc_process_b(prs):
+    """条码 10：操作层面的错误与后来定下的规则。"""
+    slide = prs.slides.add_slide(blank_layout(prs))
+    header(slide, "条码 · 10", "操作层面的错误与现在的规则",
+           "前三条来自 docs/排查问题清单.md 的 E 段，后两条是这一轮新增的")
+
+    col_w = [Inches(4.0), Inches(4.3), Inches(3.7)]
+    table(slide, [
+        ["错误", "后果", "现在的规则"],
+        ["改文件时把函数体/文档字符串删掉",
+         "先后弄坏 _first_conv_path、main()、一处 save_model 行",
+         "改完立刻读回或跑测试"],
+        ["heredoc 里塞复杂 Python",
+         "引号被 PowerShell 吃掉，报错还指向错误的行号", "写文件，不用 heredoc"],
+        ["自检表整列相同没起疑",
+         "stride 列全是 1，累计倍数算成 2 倍", "整列相同先怀疑采集方式"],
+        ["模块名与标准库重名",
+         "src/profile.py 遮蔽标准库 profile，torch 导入崩溃，4 个 run 白跑",
+         "新模块先查是否重名"],
+        ["checkpoint 只写不删",
+         "单个 run 堆 10 个权重，测试目录一度 4.3 GB", "存新最佳时删旧文件"],
+    ], MARGIN, Inches(1.74), col_w, fs=10.5, row_h=Inches(0.60))
+
+    callout(slide, MARGIN, Inches(5.30), CONTENT_W, Inches(0.9),
+            "记下来的目的只有一个：同样的错误不在第二轮重复。"
+            "这份清单现在有 35 条，按「会让结论作废的 bug / 数据审查 / "
+            "工具链陷阱 / 统计纪律 / 我自己的操作错误」五类归档。", fs=12.5)
+    finish_slide(slide, BC_NOTE)
+    return slide
+
+
 # ---------------------------------------------------------------- 重排与页码
 def refresh_page_numbers(prs):
     """重排后页码会错位，按当前顺序重刷右下角的页码文本框。
@@ -652,34 +790,61 @@ def refresh_page_numbers(prs):
                 shape.text_frame.paragraphs[0].runs[0].text = str(page)
 
 
+def reorder_slides(prs, order):
+    """按 order（0 基下标列表）重排幻灯片顺序。
+
+    只调整 ``sldIdLst`` 的元素次序，不复制/删除任何 part，
+    因此图片、图表、备注都原样保留。
+    """
+    sld_ids = prs.slides._sldIdLst
+    elements = list(sld_ids)
+    if len(order) != len(elements):
+        raise ValueError("重排下标的数量 (%d) 与页数 (%d) 不一致"
+                         % (len(order), len(elements)))
+    for element in elements:
+        sld_ids.remove(element)
+    for index in order:
+        sld_ids.append(elements[index])
+
+
 def main():
     if not BASE_PPTX.is_file():
         print("找不到底座 deck: %s" % BASE_PPTX)
         return 1
     prs = Presentation(str(BASE_PPTX))
-    existing = len(prs.slides)
-    print("  第一册（分割头）: 底座 deck 原样保留 %d 页" % existing)
+    base_count = len(prs.slides)
+    print("  第一册（分割头）: 底座 deck %d 页" % base_count)
 
-    # 第二册（条码）按顺序追加：封面 + 8 页内容 + 局限与下一步
-    build_part2_cover(prs)
-    build_bc_setup(prs)
-    build_bc_win(prs)
-    build_bc_negative(prs)
-    build_bc_split(prs)
-    build_bc_mirror(prs)
-    build_bc_1d_design(prs)
-    build_bc_1d_result(prs)
-    build_bc_lessons(prs)
-    build_part2_next(prs)
+    # 先按追加顺序生成新页，最后统一重排
+    build_p1_process_a(prs)      # new[0] 分割头 过程①
+    build_p1_process_b(prs)      # new[1] 分割头 过程②
+    build_part2_cover(prs)       # new[2] 条码封面
+    build_bc_setup(prs)          # new[3]
+    build_bc_win(prs)            # new[4]
+    build_bc_negative(prs)       # new[5]
+    build_bc_split(prs)          # new[6]
+    build_bc_mirror(prs)         # new[7]
+    build_bc_1d_design(prs)      # new[8]
+    build_bc_1d_result(prs)      # new[9]
+    build_bc_lessons(prs)        # new[10]
+    build_bc_process_a(prs)      # new[11] 条码 09
+    build_bc_process_b(prs)      # new[12] 条码 10
+    build_part2_next(prs)        # new[13] 条码 11
 
     total = len(prs.slides)
-    # 两册首尾相接，底座页保持 1..14 原顺序，新页自然落到 15..24，
-    # 因此不需要重排；只需把页码按当前顺序统一刷一遍。
+    base_idx = list(range(base_count))
+    new_idx = list(range(base_count, total))
+
+    # 底座前 10 页是正文，后 4 页是附录；分割头的两页过程插在结论之后、
+    # 附录之前，其余新页（条码这册）整体接在后面。
+    order = (base_idx[:10] + [new_idx[0], new_idx[1]] + base_idx[10:] +
+             new_idx[2:])
+    reorder_slides(prs, order)
     refresh_page_numbers(prs)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     prs.save(str(OUT_PPTX))
-    print("  第二册（条码）: 新增 %d 页" % (total - existing))
+    print("  新增 %d 页（分割头过程 2 页 + 条码 12 页）" % (total - base_count))
     print("  总计 %d 页 -> %s" % (total, OUT_PPTX))
     return 0
 
