@@ -193,6 +193,8 @@ def parse_args(argv=None):
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--num_epochs", type=int, default=10)
     parser.add_argument("--label_smoothing", type=float, default=0.0)
+    parser.add_argument("--weight_decay", type=float, default=0.0,
+                        help="Adam 的 L2 权重衰减（2D 基线是 0）")
     parser.add_argument("--feed_ar", action="store_true",
                         help="把 ar 作为附加通道拼进剖面（尺寸捷径消融）")
     parser.add_argument("--channels", default="both",
@@ -262,7 +264,10 @@ def main(argv=None):
     print("  模型参数: %.3f M, 每轮 %d 步" % (n_par / 1e6, steps_per_epoch))
 
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # 2D 基线用的是裸 Adam（weight_decay=0）。这里留一个开关，用于验证
+    # "1D 的差距是训练/正则问题而不是信息问题"这个假设
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
+                                 weight_decay=args.weight_decay)
 
     # ---------------- 训练循环 ----------------
     history = {"train_loss": [], "val_loss": [], "val_top1": [],
@@ -333,6 +338,7 @@ def main(argv=None):
             "lr": float(args.lr),
             "num_epochs": int(args.num_epochs),
             "label_smoothing": float(args.label_smoothing),
+            "weight_decay": float(args.weight_decay),
             "feed_ar": bool(args.feed_ar),
             "channels": args.channels,
             "in_channels": int(in_channels),
