@@ -20,6 +20,7 @@ from .barcode import BarcodeDataset
 from .image_io import read_barcode_image, read_image_any_path
 from .labels import build_barcode_class_mapping, build_label_to_index_map
 from .mini_imagenet import Mini_ImageNet_Datasets
+from .profile import ProfileDataset
 from .transforms import (
     AUGMENT_C39,
     AUGMENT_NONE,
@@ -38,6 +39,7 @@ __all__ = [
     "Mini_ImageNet_Datasets",
     "NORM_MEAN",
     "NORM_STD",
+    "ProfileDataset",
     "build_barcode_class_mapping",
     "build_barcode_preprocess_pipeline",
     "build_eval_transform",
