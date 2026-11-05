@@ -25,6 +25,14 @@ import gc
 
 import numpy as np
 
+import losses
+
+
+# Focal Loss 的调制指数。用模块级常量而不是命令行参数：它属于"算法选择"
+# 而非"需要扫描的超参"，扫描它会把实验自由度抬高、结论变弱。原论文在
+# 检测任务上的最优值是 2，这里沿用并在文档中固定下来。
+FOCAL_GAMMA = 2.0
+
 
 class Trainer:
     def __init__(self, args):
@@ -188,8 +196,39 @@ class Trainer:
             self.criterion = nn.CrossEntropyLoss()
         elif self.args.criterion == "label_smoothing":
             self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        elif self.args.criterion == "focal":
+            self.criterion = losses.FocalLoss(
+                gamma=FOCAL_GAMMA, alpha=self._balanced_alpha()
+            )
         else:
             raise ValueError("Wrong criterion name")
+
+    def _balanced_alpha(self):
+        """按训练集类别频率生成逆频率权重，供 Focal Loss 使用。
+
+        权重必须从**训练集**统计，不能用验证集或全量：前者会泄漏，
+        后者会让"训练时看到的类别先验"和"评估时评估的分布"混在一起。
+
+        条码数据集 C128 : EAN13 ≈ 1 : 3.3，逆频率权重约为
+        [0.77, 0.23]（C128 更大），正好对准模型漏判最多的方向。
+        归一化到"按样本数加权平均等于 1"，所以损失量级与不加权时可比，
+        学习率不用重新调。
+        """
+        class_counts = getattr(self.train_dataset, "class_counts", None)
+        if class_counts is None:
+            raise ValueError(
+                f"数据集 {self.dataset_name} 没有提供 class_counts()，"
+                "无法为 Focal Loss 生成类别权重；"
+                "请使用 criterion=CrossEntropyLoss 或实现该方法"
+            )
+        counts = class_counts()
+        alpha = losses.build_balanced_alpha(counts, self.num_classes)
+        print(
+            f"  [FocalLoss] gamma={FOCAL_GAMMA} "
+            f"类别计数={counts.tolist()} "
+            f"alpha={[round(float(value), 4) for value in alpha]}"
+        )
+        return alpha
 
     def _run_epoch(self, loader, is_train, label, collect=None):
         """跑一个 epoch，返回 (平均损失, Top-1 正确率, Top-5 正确率)。

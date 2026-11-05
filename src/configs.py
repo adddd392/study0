@@ -307,6 +307,48 @@ def _make_barcode_resnet224() -> ExperimentConfig:
     )
 
 
+def _make_barcode_mobilenet_224() -> ExperimentConfig:
+    """条码集 224 配置：MobileNetV3 + 224。
+
+    128 输入的最终特征图只有 4×4，而条码靠条/空宽度比例区分，需要更细的
+    空间分辨率。实测 10 轮：test 98.88% → 99.39%，错误 11 → 6
+    （见 docs/条码实验记录.md）。
+    """
+    return _barcode(
+        "barcode_mobilenet_224",
+        model_name="MobileNetV3-Large",
+        input_size=(224, 224),
+    )
+
+
+def _make_barcode_mobilenet_224_focal() -> ExperimentConfig:
+    """条码集 224 + Focal Loss：本阶段主推配置。
+
+    动机来自错误审计：11 个错误里 9 个是 C128（小类）被漏判，而 C128
+    的样本数只有 EAN13 的 1/3.3。Focal Loss 的 (1-p_t)^gamma 把易分样本
+    的梯度压下去，alpha 按逆频率给少数类加权。
+    """
+    return _barcode(
+        "barcode_mobilenet_224_focal",
+        model_name="MobileNetV3-Large",
+        input_size=(224, 224),
+        criterion="focal",
+    )
+
+
+def _make_barcode_mobilenet_224_label_smoothing() -> ExperimentConfig:
+    """条码集 224 + Label Smoothing α=0.1：抑制过拟合的对照配置。
+
+    基线在末两轮 val loss 从 0.022 涨到 0.145，是过拟合的直接证据。
+    """
+    return _barcode(
+        "barcode_mobilenet_224_label_smoothing",
+        model_name="MobileNetV3-Large",
+        input_size=(224, 224),
+        criterion="label_smoothing",
+    )
+
+
 def _make_barcode_smoke() -> ExperimentConfig:
     """冒烟配置：1 轮、小批，专门验证"整条链路通不通"，不看精度。"""
     return _barcode(
@@ -325,6 +367,11 @@ CONFIGS: Dict[str, Callable[[], ExperimentConfig]] = {
     "mini_imagenet_mobilenet": _make_mini_imagenet_mobilenet,
     "mini_imagenet_convnext": _make_mini_imagenet_convnext,
     "barcode_mobilenet_128": _make_barcode_mobilenet_128,
+    "barcode_mobilenet_224": _make_barcode_mobilenet_224,
+    "barcode_mobilenet_224_focal": _make_barcode_mobilenet_224_focal,
+    "barcode_mobilenet_224_label_smoothing": (
+        _make_barcode_mobilenet_224_label_smoothing
+    ),
     "barcode_resnet224": _make_barcode_resnet224,
     "barcode_smoke": _make_barcode_smoke,
 }

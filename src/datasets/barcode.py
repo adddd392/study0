@@ -288,6 +288,19 @@ class BarcodeDataset(Dataset):
         """样本总数。"""
         return len(self._image_paths)
 
+    def class_counts(self):
+        """各类别的样本数，按 label_id 顺序排列。
+
+        用途：给损失函数准备逆频率权重（Focal Loss 的 alpha、或加权交叉熵）。
+        必须由数据集自己提供，而不是让训练侧去读 df —— 训练侧不该知道
+        这个数据集内部的表结构，也不该重复实现类别计数逻辑。
+
+        返回:
+            numpy.ndarray，长度等于 num_classes，第 i 项是 label_id==i 的样本数。
+        """
+        counts = np.bincount(self._labels, minlength=self.num_classes)
+        return counts.astype('int64')
+
     def __getitem__(self, idx):
         """返回 (image, label)。
 
