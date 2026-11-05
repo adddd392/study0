@@ -36,6 +36,8 @@ from models import (  # noqa: E402
 EXPECTED_PARAMS = {
     "Resnet-50": 23528522,
     "MobileNetV3-Large": 4214842,
+    # S16 变体只改一个卷积的 stride，参数量必须与原版**完全相同**
+    "MobileNetV3-Large-S16": 4214842,
     "ConvNeXt-Tiny": 27827818,
 }
 NUM_CLASSES = 10
@@ -230,6 +232,79 @@ def case_bn_momentum_helper() -> None:
     print("set_bn_momentum: 只改动量 OK")
 
 
+def case_backbone_stride_reduced() -> None:
+    """S16 变体的累计步长必须是 16，原版是 32，且只改了一个 block。
+
+    这条是"降低下采样"实验的结构指纹：如果哪天有人多改/少改一个步长，
+    特征图尺寸就会变，精度对比立刻失去意义。
+    """
+    native = get_model("MobileNetV3-Large", NUM_CLASSES)
+    reduced = get_model("MobileNetV3-Large-S16", NUM_CLASSES)
+
+    assert models_module.backbone_stride(native) == 32, (
+        f"原生 MobileNetV3 累计步长应为 32，"
+        f"实际 {models_module.backbone_stride(native)}"
+    )
+    assert models_module.backbone_stride(reduced) == 16, (
+        f"S16 变体累计步长应为 16，"
+        f"实际 {models_module.backbone_stride(reduced)}"
+    )
+
+    # 只改最深的 block[13]，其余 block 保持原样
+    changed = models_module.reduce_backbone_stride(
+        get_model("MobileNetV3-Large", NUM_CLASSES), 16
+    )
+    assert changed == [13], f"S16 只应改 block[13] 的步长，实际改了 {changed}"
+    print(f"累计步长: 原版 32 -> S16 16 OK（改动 block {changed}）")
+
+
+def case_feature_map_doubles() -> None:
+    """224 输入时，S16 的分类头前特征图必须是 14x14（原版 7x7）。
+
+    同时验证 avgpool 之后仍能被分类头正确消费——步长改了但 head 不用动。
+    """
+    size = 224
+    native = get_model("MobileNetV3-Large", NUM_CLASSES, in_channels=1).eval()
+    reduced = get_model("MobileNetV3-Large-S16", NUM_CLASSES,
+                        in_channels=1).eval()
+
+    probe = torch.zeros(1, 1, size, size)
+    with torch.no_grad():
+        native_map = native.features(probe)
+        reduced_map = reduced.features(probe)
+        reduced_logits = reduced(probe)
+
+    assert tuple(native_map.shape[2:]) == (7, 7), (
+        f"原版特征图应为 7x7，实际 {tuple(native_map.shape[2:])}"
+    )
+    assert tuple(reduced_map.shape[2:]) == (14, 14), (
+        f"S16 特征图应为 14x14，实际 {tuple(reduced_map.shape[2:])}"
+    )
+    assert tuple(reduced_logits.shape) == (1, NUM_CLASSES), (
+        f"S16 输出形状错: {tuple(reduced_logits.shape)}"
+    )
+    print(
+        f"特征图: 原版 {tuple(native_map.shape)} -> "
+        f"S16 {tuple(reduced_map.shape)} OK"
+    )
+
+
+def case_reduce_stride_rejects_impossible_target() -> None:
+    """目标步长比可取消的下采样还小，必须报错而不是静默返回。"""
+    # MobileNetV3 最多只能取消 5 个步长 2（32 -> 1）
+    model = get_model("MobileNetV3-Large", NUM_CLASSES)
+    models_module.reduce_backbone_stride(model, 16)
+    assert models_module.backbone_stride(model) == 16
+
+    try:
+        models_module.reduce_backbone_stride(model, 0)
+    except ValueError as exc:
+        assert "target_stride" in str(exc), f"报错信息不明确: {exc}"
+    else:
+        raise AssertionError("target_stride=0 应抛 ValueError")
+    print("非法 target_stride 校验: OK")
+
+
 def main() -> int:
     case_headers_and_params()
     case_grayscale_forward()
@@ -238,6 +313,9 @@ def main() -> int:
     case_invalid_arguments()
     case_bn_momentum_unified()
     case_bn_momentum_helper()
+    case_backbone_stride_reduced()
+    case_feature_map_doubles()
+    case_reduce_stride_rejects_impossible_target()
     print("全部通过")
     return 0
 

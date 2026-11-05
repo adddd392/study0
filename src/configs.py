@@ -321,8 +321,23 @@ def _make_barcode_mobilenet_224() -> ExperimentConfig:
     )
 
 
+def _make_barcode_mobilenet_224_s16() -> ExperimentConfig:
+    """条码集 224 + 累计步长 16：把分类头前的特征图从 7x7 提到 14x14。
+
+    与 barcode_mobilenet_224 只差模型名（MobileNetV3-Large-S16），
+    后者只把最深的 stride-2 卷积改回 1。参数完全不变，MACs 1.62 倍。
+    用途：判断"网络分辨率"是否还是瓶颈——若 14x14 不再涨点，说明瓶颈已经
+    转移到输入信息量（图像本身太糊/太小），不该继续堆分辨率。
+    """
+    return _barcode(
+        "barcode_mobilenet_224_s16",
+        model_name="MobileNetV3-Large-S16",
+        input_size=(224, 224),
+    )
+
+
 def _make_barcode_mobilenet_224_focal() -> ExperimentConfig:
-    """条码集 224 + Focal Loss：本阶段主推配置。
+    """条码集 224 + Focal Loss：小类加权的对照配置。
 
     动机来自错误审计：11 个错误里 9 个是 C128（小类）被漏判，而 C128
     的样本数只有 EAN13 的 1/3.3。Focal Loss 的 (1-p_t)^gamma 把易分样本
@@ -368,6 +383,7 @@ CONFIGS: Dict[str, Callable[[], ExperimentConfig]] = {
     "mini_imagenet_convnext": _make_mini_imagenet_convnext,
     "barcode_mobilenet_128": _make_barcode_mobilenet_128,
     "barcode_mobilenet_224": _make_barcode_mobilenet_224,
+    "barcode_mobilenet_224_s16": _make_barcode_mobilenet_224_s16,
     "barcode_mobilenet_224_focal": _make_barcode_mobilenet_224_focal,
     "barcode_mobilenet_224_label_smoothing": (
         _make_barcode_mobilenet_224_label_smoothing

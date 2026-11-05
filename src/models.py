@@ -19,15 +19,22 @@ import torchvision.models as models
 MODEL_BUILDERS = {
     "Resnet-50": lambda n: models.resnet50(num_classes=n),
     "MobileNetV3-Large": lambda n: models.mobilenet_v3_large(num_classes=n),
+    # 高分辨率变体：累计下采样步长 32 -> 16，分类头前的特征图 7x7 -> 14x14。
+    # 用 lambda 而不是直接引用，是因为构造函数定义在文件下方，调用时才解析名字。
+    "MobileNetV3-Large-S16": (
+        lambda n: _build_mobilenet_v3_large_stride16(n)
+    ),
     "ConvNeXt-Tiny": lambda n: models.convnext_tiny(num_classes=n),
 }
 
 # 各架构"第一个卷积层"在模型里的访问路径。
 # ResNet 是 model.conv1；MobileNetV3 与 ConvNeXt 都把首层放在
 # features[0][0] 里（ConvNormActivation 的第一个子模块）。
+# S16 变体只是改了最深处一个卷积的步长，首层路径与原版完全相同。
 FIRST_CONV_PATHS = {
     "Resnet-50": ("conv1",),
     "MobileNetV3-Large": ("features", 0, 0),
+    "MobileNetV3-Large-S16": ("features", 0, 0),
     "ConvNeXt-Tiny": ("features", 0, 0),
 }
 
@@ -97,6 +104,127 @@ def _set_submodule(model, path, new_module):
     else:
         setattr(parent, last, new_module)
     return old
+
+
+# ---------------------------------------------------------------------------
+# 主干累计下采样倍数：降低它，分类头前就能拿到更大的特征图
+# ---------------------------------------------------------------------------
+#
+# MobileNetV3-Large 的 features 共 17 个 block，其中 5 个带步长 2
+# （block 0、2、4、7、13），累计下采样 32 倍：
+#
+#     block   0     2     4     7    13
+#     步长    2     2     2     2     2      -> 累计 2^5 = 32
+#     @224   112    56    28    14     7     -> 分类头前 7x7
+#
+# 最后一次下采样在 block[13]，所以 [13]~[16] 这四个 block 都在 1/32
+# 分辨率上跑，输出的都是 7x7（224 输入）。如果把 block[13] 的步长改回 1，
+# 累计步长变成 16，这四个 block 就工作在 14x14 上。
+#
+# 为什么只改最深的那一处（实测，224 输入，CPU）：
+#     去掉 block[13] 的步长 -> MACs 1.62x、前向 1.34x  （选它）
+#     去掉 block[7]  的步长 -> MACs 约 2.6x
+#     去掉 block[0]  的步长 -> MACs 3.96x、前向 4.41x
+# 越靠前的步长越贵：浅层特征图大、通道虽少但乘加总量更高。所以要从深往浅改。
+#
+# 另一条等价的路线是"把输入从 224 放大到 448"也能得到 14x14，但实测
+# MACs 3.96x、前向 4.47x —— 同样分辨率贵 3 倍多。降步长是更省的换法。
+NATIVE_BACKBONE_STRIDE = 32
+REDUCED_BACKBONE_STRIDE = 16
+
+
+def backbone_stride(model):
+    """返回 features 主干的累计下采样倍数。
+
+    算法：把每个 block 内部所有卷积的**最大步长**取出来，再逐块连乘。
+    写成"最大步长"而不是"第一个卷积的步长"，是因为 MobileNetV3 的步长
+    放在深度可分离卷积上，它的第一个卷积（1x1 扩张）永远是 stride 1。
+    我最初按 block.block[0] 取，结果整列都读成 1，累计倍数算成 2。
+
+    参数:
+        model: 含 features 顺序堆叠主干的模型（MobileNetV3 / ConvNeXt 这类）。
+    返回:
+        int，累计下采样倍数（MobileNetV3-Large 原生为 32）。
+    """
+    if not hasattr(model, "features"):
+        raise ValueError(
+            "backbone_stride 只支持含 features 主干的模型（如 MobileNetV3）"
+        )
+    total = 1
+    for block in model.features:
+        strides = [
+            module.stride[0]
+            for module in block.modules()
+            if isinstance(module, nn.Conv2d)
+        ]
+        # 没有卷积的 block（纯归一化/激活）不参与下采样
+        total *= max(strides) if strides else 1
+    return total
+
+
+def _downsampling_convs(model):
+    """列出主干里所有步长 >1 的卷积，按 block 下标从深到浅排序。
+
+    返回:
+        [(block 下标, 卷积模块), ...]，最深的在前 —— 这样调用方可以从
+        最便宜的位置开始降低采样。
+    """
+    if not hasattr(model, "features"):
+        raise ValueError(
+            "_downsampling_convs 只支持含 features 主干的模型"
+        )
+    found = []
+    for index, block in enumerate(model.features):
+        for module in block.modules():
+            if isinstance(module, nn.Conv2d) and module.stride != (1, 1):
+                found.append((index, module))
+    # 从深到浅：先动最靠后的 block
+    return list(reversed(found))
+
+
+def reduce_backbone_stride(model, target_stride):
+    """从最深的步长 >1 卷积开始改回 1，直到累计步长降到 target_stride。
+
+    只改 stride，不动 kernel/padding/通道数，所以**参数量完全不变**。
+    MobileNetV3 里这些卷积都是 same padding（k3/s2/p1、k5/s2/p2），
+    把 stride 改成 1 之后输出尺寸与输入相同，因此特征图"变大"而不是
+    "变形"——这一点由 tests/test_models.py 的形状断言锁定。
+
+    参数:
+        model: 原地修改的模型。
+        target_stride: 目标累计步长（1 的倍数），例如 16。
+    返回:
+        被修改的 block 下标列表（深 -> 浅），便于日志与断言。
+    """
+    if target_stride < 1:
+        raise ValueError(f"target_stride 必须 >= 1，收到 {target_stride}")
+
+    changed = []
+    for block_index, conv in _downsampling_convs(model):
+        if backbone_stride(model) <= target_stride:
+            break
+        conv.stride = (1, 1)
+        changed.append(block_index)
+
+    current = backbone_stride(model)
+    if current > target_stride:
+        raise ValueError(
+            f"无法把累计步长降到 {target_stride}，当前仍为 {current}："
+            "该主干没有足够的步长 2 卷积可供取消"
+        )
+    return changed
+
+
+def _build_mobilenet_v3_large_stride16(num_classes):
+    """构建累计步长 16 的 MobileNetV3-Large（高分辨率变体）。
+
+    相比原版只改一处：最深的 stride-2 卷积（block[13]）步长改回 1，
+    于是分类头前的特征图从 7x7（224 输入）变成 14x14。
+    代价（实测 224 输入，CPU）：MACs 1.62 倍、前向 1.34 倍，参数不变。
+    """
+    model = models.mobilenet_v3_large(num_classes=num_classes)
+    reduce_backbone_stride(model, REDUCED_BACKBONE_STRIDE)
+    return model
 
 
 def _first_conv_path(model_name):
