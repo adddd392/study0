@@ -49,6 +49,26 @@ import profiling  # noqa: E402
 from datasets.profile import ProfileDataset  # noqa: E402
 
 
+class SelectChannelsDataset(Dataset):
+    """只取剖面的指定通道，用于单通道消融。
+
+    剖面前端默认给两路（0 平滑、1 高通）。这里在 __getitem__ 里做切片，
+    而不是重算前端：前端结果与通道选择无关，切一刀就够，也顺手保证
+    "消融组的剖面与主口径逐位相同"。
+    """
+
+    def __init__(self, base, channels):
+        self.base = base
+        self.channels = list(channels)
+
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, index):
+        profile, label = self.base[index]
+        return profile[self.channels], label
+
+
 class AppendArDataset(Dataset):
     """把 ar（原始宽高比）作为附加通道拼进剖面。
 
@@ -175,6 +195,9 @@ def parse_args(argv=None):
     parser.add_argument("--label_smoothing", type=float, default=0.0)
     parser.add_argument("--feed_ar", action="store_true",
                         help="把 ar 作为附加通道拼进剖面（尺寸捷径消融）")
+    parser.add_argument("--channels", default="both",
+                        choices=("both", "gray", "hp"),
+                        help="both=双通道, gray=仅灰度, hp=仅高通（单通道消融）")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--num_workers", type=int, default=0)
@@ -204,15 +227,25 @@ def main(argv=None):
     num_classes = train_set.num_classes
     print("  样本数: train %d / val %d / test %d"
           % (len(train_set), len(val_set), len(test_set)))
-    print("  类别分布: train %s" % (train_set.class_counts().tolist(),))
+    # 类别分布要在包装成消融数据集之前取：包装类不实现统计接口
+    class_counts = train_set.class_counts().tolist()
+    print("  类别分布: train %s" % (class_counts,))
 
-    in_channels = 2
+    # 通道选择：both(2) / gray(1) / hp(1)
+    channel_map = {"both": (0, 1), "gray": (0,), "hp": (1,)}
+    channels = channel_map[args.channels]
+    if len(channels) != 2:
+        train_set = SelectChannelsDataset(train_set, channels)
+        val_set = SelectChannelsDataset(val_set, channels)
+        test_set = SelectChannelsDataset(test_set, channels)
+    in_channels = len(channels)
+    print("  输入: %s -> %d 通道" % (args.channels, in_channels))
     if args.feed_ar:
         # ar 消融：多一个常数通道
         train_set = AppendArDataset(train_set)
         val_set = AppendArDataset(val_set)
         test_set = AppendArDataset(test_set)
-        in_channels = 3
+        in_channels += 1
 
     train_loader = make_loader(train_set, args.batch_size, True,
                                args.num_workers)
@@ -301,6 +334,7 @@ def main(argv=None):
             "num_epochs": int(args.num_epochs),
             "label_smoothing": float(args.label_smoothing),
             "feed_ar": bool(args.feed_ar),
+            "channels": args.channels,
             "in_channels": int(in_channels),
             "train_csv": args.train_csv,
             "val_csv": args.val_csv,
@@ -312,8 +346,7 @@ def main(argv=None):
         "class_names": class_names,
         "n_samples": {"train": len(train_set), "val": len(val_set),
                       "test": len(test_set)},
-        "class_counts": train_set.base.class_counts().tolist()
-        if args.feed_ar else train_set.class_counts().tolist(),
+        "class_counts": class_counts,
         "best_epoch": int(best["epoch"]),
         "best_val_loss": float(best["val_loss"]),
         "test_loss": float(test_loss),
