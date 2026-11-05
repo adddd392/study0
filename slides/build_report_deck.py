@@ -2,10 +2,9 @@
 
 设计要点
 --------
-1. **以已有的分割头 deck 为底座**（13.33x7.5 英寸、Microsoft YaHei、
-   蓝/橙双色），不重建那 14 页 —— 它们包含手工绘制的结构图与实测配图，
-   重建等于丢内容。做法是 ``Presentation(源文件)`` 打开后追加新页，
-   最后重排 ``sldIdLst`` 得到目标顺序。
+1. **两册各自成册，首尾相接**：前 14 页是分割头 deck 原样保留（含它
+   自己的封面与附录），后 10 页是条码部分自己的封面 + 8 页内容 + 收尾。
+   不做统一封面/目录/总结，两部分互不引用。
 2. 新页的视觉参数（字号、留白、表头色、页脚）与底座完全一致，
    靠复刻同一个调色板与 helper 实现。
 3. 页码在重排后会错位，所以最后统一重刷右下角的页码文本框。
@@ -220,102 +219,14 @@ def callout(slide, x, y, w, h, text, fill=RGBColor(0xFD, 0xF3, 0xE6),
     return box
 
 
-def stat_blocks(slide, y, stats, size_big=22, x0=None):
-    """一行数值卡片：(大数字, 小标签) 列表。
-
-    x0 可指定起始左边界，卡片宽度按剩余可用宽度均分，
-    这样封面（左边距比正文更大）与正文页都能用同一个函数。
-    """
-    n = len(stats)
-    start = MARGIN if x0 is None else x0
-    gap = Inches(0.30)
-    usable = W - start - MARGIN
-    width = int((usable - gap * (n - 1)) / n)
-    x = start
-    for big, label in stats:
-        tb(slide, x, y, width, Inches(0.42), big, size=size_big, bold=True,
-           color=BLUE)
-        tb(slide, x, y + Inches(0.44), width, Inches(0.26), label, size=11,
-           color=GRAY)
-        x += width + gap
-
-
 def finish_slide(slide, note):
     """新页统一的页脚标注。"""
     footer(slide, note)
 
 
-# ---------------------------------------------------------------- 新页：总纲
-def build_cover(prs):
-    """封面：标题 + 并列陈述两件事 + 三个关键数字。"""
-    slide = prs.slides.add_slide(blank_layout(prs))
-    band = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(0.34), H)
-    band.fill.solid()
-    band.fill.fore_color.rgb = BLUE
-    band.line.fill.background()
-    band.shadow.inherit = False
-
-    tb(slide, Inches(1.35), Inches(1.50), Inches(10), Inches(0.3),
-       "2026-11-05", size=12, color=GRAY)
-    tb(slide, Inches(1.35), Inches(1.95), Inches(10.5), Inches(0.85),
-       "第三周汇报", size=40, bold=True)
-    line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.35),
-                                  Inches(2.95), Inches(1.6), Pt(4))
-    line.fill.solid()
-    line.fill.fore_color.rgb = ORANGE
-    line.line.fill.background()
-    line.shadow.inherit = False
-    # 两件事分别陈述，不做归纳：各自写清做了什么
-    tb(slide, Inches(1.35), Inches(3.25), Inches(10.6), Inches(1.0),
-       "一、YOLO11 → YOLO26 实例分割头：结构差异与 CPU 实测\n"
-       "二、条码码制分类：基线、负结果、划分反转与一维剖面",
-       size=17, color=INK, line_spacing=1.6)
-
-    stat_blocks(slide, Inches(5.75), [
-        ("26 页", "分割头 10 · 条码 12 · 附录 4"),
-        ("99.39%", "条码 2D 基线 Top-1"),
-        ("95.34%", "一维剖面最佳 Top-1"),
-    ], size_big=20, x0=Inches(1.35))
-    tb(slide, Inches(1.35), H - Inches(0.62), Inches(9), Inches(0.26),
-       "ultralytics 8.4.184 · torch 2.4.1+cpu · 全部数字来自本机实测与仓库内产物",
-       size=9, color=GRAY)
-    return slide
-
-
-def build_agenda(prs):
-    """目录：两部分各自的子问题，逐条陈述。"""
-    slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "目录", "两部分的内容")
-
-    tb(slide, MARGIN, Inches(1.75), Inches(6.0), Inches(0.3),
-       "第一部分  ·  YOLO26 分割头", size=13, bold=True, color=BLUE)
-    bullets(slide, MARGIN, Inches(2.15), Inches(5.7), [
-        "三条支路：检测支 / 系数支 / 原型支",
-        "一次矩阵乘：系数 × 原型 → mask",
-        "11 与 26 的四处差异与不变的接口",
-        "实测：参数量、延迟、ONNX 节点",
-    ], size=13)
-
-    tb(slide, Inches(7.0), Inches(1.75), Inches(5.7), Inches(0.3),
-       "第二部分  ·  条码码制分类", size=13, bold=True, color=BLUE)
-    bullets(slide, Inches(7.0), Inches(2.15), Inches(5.7), [
-        "基线：128 → 224，唯一有效的改动",
-        "负结果：Focal / LS / S16 / 20 轮 / 几何",
-        "划分反转与镜像复核：方向能复现吗",
-        "一维剖面：差距到底来自信息还是训练",
-    ], size=13, dot=ORANGE)
-
-    # 只交代页码与内容范围，不做跨部分的归纳
-    callout(slide, MARGIN, Inches(5.2), CONTENT_W, Inches(1.05),
-            "第一部分（分割头）P3–P12，资料与附录 P23–P26；"
-            "第二部分（条码）P13–P22。两部分内容相互独立，"
-            "各自给出问题、方法、数据与结论。", fs=13)
-    finish_slide(slide, "第三周汇报 · 目录")
-    return slide
-
-
-def build_part_divider(prs):
-    """第二部分的分隔页，插在条码实验各页之前。"""
+# ---------------------------------------------------------------- 条码部分
+def build_part2_cover(prs):
+    """条码部分的封面：这一册自己的标题页。"""
     slide = prs.slides.add_slide(blank_layout(prs))
     band = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(0.34), H)
     band.fill.solid()
@@ -323,14 +234,42 @@ def build_part_divider(prs):
     band.line.fill.background()
     band.shadow.inherit = False
 
-    tb(slide, Inches(1.35), Inches(2.55), Inches(10), Inches(0.34),
-       "第二部分", size=13, color=GRAY)
-    tb(slide, Inches(1.35), Inches(3.0), Inches(10.5), Inches(1.2),
-       "条码码制分类实验", size=36, bold=True)
-    tb(slide, Inches(1.35), Inches(4.15), Inches(10.5), Inches(0.9),
-       "基线 · 负结果 · 划分反转复核 · 一维剖面\n"
-       "数据集 6527 张（C128 : EAN13 ≈ 1 : 3.3）· MobileNetV3-Large 从零训练 · CPU",
-       size=14, color=GRAY, line_spacing=1.5)
+    tb(slide, Inches(1.35), Inches(1.45), Inches(10), Inches(0.3),
+       "2026-11-05", size=12, color=GRAY)
+    tb(slide, Inches(1.35), Inches(1.90), Inches(10.5), Inches(0.85),
+       "条码码制分类实验", size=40, bold=True)
+    line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.35),
+                                  Inches(2.90), Inches(1.6), Pt(4))
+    line.fill.solid()
+    line.fill.fore_color.rgb = BLUE
+    line.line.fill.background()
+    line.shadow.inherit = False
+
+    tb(slide, Inches(1.35), Inches(3.18), Inches(10.6), Inches(0.8),
+       "数据集 6527 张（C128 : EAN13 ≈ 1 : 3.3）\n"
+       "MobileNetV3-Large 从零训练 · CPU · 3 seed 同 seed 配对检验",
+       size=15, color=GRAY, line_spacing=1.55)
+
+    tb(slide, Inches(1.35), Inches(4.42), Inches(10.6), Inches(0.3),
+       "内容", size=13, bold=True, color=BLUE)
+    left = ["01  实验设定：数据、配方、判据",
+            "02  唯一有效的改动 128 → 224",
+            "03  五个负结果：都不显著",
+            "04  划分反转复核：方向能复现吗"]
+    right = ["05  镜像复核：三个干预重跑",
+             "06  一维剖面：设计与预注册",
+             "07  结果与两轮诊断",
+             "08  三个把变量控制住的做法"]
+    for column, items in ((Inches(1.35), left), (Inches(7.0), right)):
+        y = Inches(4.78)
+        for item in items:
+            tb(slide, column, y, Inches(4.9), Inches(0.3), item, size=12.5,
+               color=INK)
+            y += Inches(0.34)
+
+    tb(slide, Inches(1.35), H - Inches(0.62), Inches(10.6), Inches(0.26),
+       "数据来源：docs/条码实验记录.md · docs/一维剖面实验.md · "
+       ".tmp_tests/ 内实测产物", size=9, color=GRAY)
     return slide
 
 
@@ -660,67 +599,38 @@ def build_bc_lessons(prs):
     return slide
 
 
-def build_summary(prs):
-    """收尾页：产出 + 下一步。"""
+def build_part2_next(prs):
+    """条码部分的收尾页：只讲这部分的局限与下一步。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "总结", "本周产出与下一步",
-           "代码、测试、文档、实验产物都在仓库里，可复现")
+    header(slide, "条码 · 09", "局限与下一步", "都只针对本部分的实验")
 
-    tb(slide, MARGIN, Inches(1.75), Inches(6.0), Inches(0.3),
-       "产出", size=13, bold=True, color=BLUE)
-    table(slide, [
-        ["类别", "内容"],
-        ["新增模块", "profile1d / models_1d / datasets.profile / train_profile"],
-        ["测试", "3 个文件 31 项，flake8 无告警"],
-        ["文档", "一维剖面实验.md + 条码实验记录 §7.1"],
-        ["实验", "2D 32 个 run + 1D 33 个 run，全部落盘"],
-        ["提交", "本轮 9 个 commit（含 2 处 bug 修复）"],
-    ], MARGIN, Inches(2.10), [Inches(1.3), Inches(4.6)], fs=11)
+    tb(slide, MARGIN, Inches(1.78), Inches(6.0), Inches(0.3),
+       "局限", size=13, bold=True, color=BLUE)
+    bullets(slide, MARGIN, Inches(2.14), Inches(5.9), [
+        ("训练预算：", "10 轮；swap 划分下训练样本只有 979 张"),
+        ("选轮依据：", "验证集 979 张，按验证损失选最佳轮，自身有噪声"),
+        ("前端假设：", "条码竖直、无倾斜（200 张探针支持，不等于全部样本）"),
+        ("缺对照：", "未做 2D 长训练（30~60 轮）对照，所以 2D 上限没有直接证据"),
+    ], size=12)
 
-    tb(slide, Inches(7.1), Inches(1.75), Inches(5.6), Inches(0.3),
-       "下一步（按价值排序）", size=13, bold=True, color=BLUE)
-    bullets(slide, Inches(7.1), Inches(2.10), Inches(5.6), [
-        ("原始划分重跑 1D：", "直接用 4569 张训练，检验「差距源于 979 样本过拟」这个归因"),
+    tb(slide, Inches(7.1), Inches(1.78), Inches(5.6), Inches(0.3),
+       "下一步", size=13, bold=True, color=ORANGE)
+    bullets(slide, Inches(7.1), Inches(2.14), Inches(5.6), [
+        ("原始划分重跑 1D：", "用 4569 张训练，检验「差距来自 979 样本过拟」这个归因"),
         ("1D 侧强增广：", "条宽抖动、保比例的随机裁剪、弹性形变"),
-        ("条码侧下一个高地：", "预训练权重灰度适配；多尺度增强（尺寸跨度 31~2024 px）"),
+        ("预训练权重灰度适配：", "从零训练只用 4569 张，这是最可能有增益的方向"),
+        ("多尺度增强：", "尺寸跨度 31~2024 px，固定缩放会同时牺牲小图与大图"),
     ], size=12, dot=ORANGE)
 
-    stats = [("9", "新增 commit"), ("31", "新增测试项"),
-             ("65", "实验 run"), ("0", "flake8 告警")]
-    x = MARGIN
-    width = Inches(2.0)
-    for big, label in stats:
-        tb(slide, x, Inches(5.35), width, Inches(0.55), big, size=30,
-           bold=True, color=BLUE)
-        tb(slide, x, Inches(5.95), width, Inches(0.26), label, size=11,
-           color=GRAY)
-        x += width
-
-    callout(slide, Inches(9.6), Inches(5.28), Inches(3.1), Inches(1.0),
-            "全部结论可复现：\n每页数字都能在 docs/ 或 .tmp_tests/ 里查到出处。",
-            fs=11.5, fill=RGBColor(0xF6, 0xFF, 0xF6), edge=GREEN)
+    callout(slide, MARGIN, Inches(5.55), CONTENT_W, Inches(0.85),
+            "本部分所有数字都能在 docs/ 与 .tmp_tests/ 里查到出处；"
+            "复现命令见 docs/一维剖面实验.md §10。", fs=12,
+            fill=RGBColor(0xEA, 0xF1, 0xF8), edge=BLUE)
     finish_slide(slide, BC_NOTE)
     return slide
 
 
 # ---------------------------------------------------------------- 重排与页码
-def reorder_slides(prs, order):
-    """按 order（0 基下标列表）重排幻灯片顺序。
-
-    只调整 ``sldIdLst`` 的元素次序，不复制/删除任何 part，
-    因此图片、图表、备注都原样保留。
-    """
-    sld_ids = prs.slides._sldIdLst
-    elements = list(sld_ids)
-    if len(order) != len(elements):
-        raise ValueError("重排下标的数量 (%d) 与页数 (%d) 不一致"
-                         % (len(order), len(elements)))
-    for element in elements:
-        sld_ids.remove(element)
-    for index in order:
-        sld_ids.append(elements[index])
-
-
 def refresh_page_numbers(prs):
     """重排后页码会错位，按当前顺序重刷右下角的页码文本框。
 
@@ -742,54 +652,35 @@ def refresh_page_numbers(prs):
                 shape.text_frame.paragraphs[0].runs[0].text = str(page)
 
 
-def add_part_tag(prs, existing_count, tag):
-    """在底座 deck 的封面（第 1 页）右上角加一个分部标签。"""
-    slide = prs.slides[0]
-    tb(slide, W - MARGIN - Inches(3.0), Inches(0.42), Inches(3.0),
-       Inches(0.3), tag, size=11, color=GRAY, align=PP_ALIGN.RIGHT)
-
-
 def main():
     if not BASE_PPTX.is_file():
         print("找不到底座 deck: %s" % BASE_PPTX)
         return 1
     prs = Presentation(str(BASE_PPTX))
     existing = len(prs.slides)
-    print("  底座 deck: %d 页" % existing)
+    print("  第一册（分割头）: 底座 deck 原样保留 %d 页" % existing)
 
-    # 新页按追加顺序生成，最后统一重排
-    build_cover(prs)          # new[0]
-    build_agenda(prs)         # new[1]
-    build_part_divider(prs)   # new[2]
-    build_bc_setup(prs)       # new[3]
-    build_bc_win(prs)         # new[4]
-    build_bc_negative(prs)    # new[5]
-    build_bc_split(prs)       # new[6]
-    build_bc_mirror(prs)      # new[7]
-    build_bc_1d_design(prs)   # new[8]
-    build_bc_1d_result(prs)   # new[9]
-    build_bc_lessons(prs)     # new[10]
-    build_summary(prs)        # new[11]
+    # 第二册（条码）按顺序追加：封面 + 8 页内容 + 局限与下一步
+    build_part2_cover(prs)
+    build_bc_setup(prs)
+    build_bc_win(prs)
+    build_bc_negative(prs)
+    build_bc_split(prs)
+    build_bc_mirror(prs)
+    build_bc_1d_design(prs)
+    build_bc_1d_result(prs)
+    build_bc_lessons(prs)
+    build_part2_next(prs)
 
     total = len(prs.slides)
-    new_count = total - existing
-    base_idx = list(range(existing))
-    new_idx = list(range(existing, total))
-
-    # 目标顺序：
-    #   封面 / 目录 / [分割头 10 页] / 第二部分分隔页 / 条码 8 页 /
-    #   总结 / [附录 4 页]
-    order = ([new_idx[0], new_idx[1]] + base_idx[:10] + [new_idx[2]] +
-             new_idx[3:11] + [new_idx[11]] + base_idx[10:])
-    # 分部标签加在底座 deck 的封面上，必须在重排之前加，
-    # 否则 prs.slides[0] 已经是新做的总封面了
-    add_part_tag(prs, existing, "第一部分  ·  分割头源码对比")
-    reorder_slides(prs, order)
+    # 两册首尾相接，底座页保持 1..14 原顺序，新页自然落到 15..24，
+    # 因此不需要重排；只需把页码按当前顺序统一刷一遍。
     refresh_page_numbers(prs)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     prs.save(str(OUT_PPTX))
-    print("  新页 %d 页，总计 %d 页 -> %s" % (new_count, total, OUT_PPTX))
+    print("  第二册（条码）: 新增 %d 页" % (total - existing))
+    print("  总计 %d 页 -> %s" % (total, OUT_PPTX))
     return 0
 
 
