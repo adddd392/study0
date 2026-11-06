@@ -256,15 +256,14 @@ def build_part2_cover(prs):
     left = ["01  实验设定：数据、配方、判据",
             "02  数据样例：6527 张长什么样",
             "03  唯一有效的改动 128 → 224",
-            "04  五个负结果：都不显著",
-            "05  划分反转复核：方向能复现吗",
-            "06  镜像复核：三个干预重跑"]
-    right = ["07  一维剖面：设计与预注册",
-             "08  结果与两轮诊断",
-             "09  三个把变量控制住的做法",
-             "10  五次让结论作废的错误",
-             "11  操作层面的错误与规则",
-             "12  局限与下一步"]
+            "04  划分反转复核：方向能复现吗",
+            "05  五个负结果：换到 15% 训练集重跑",
+            "06  一维剖面：设计与预注册"]
+    right = ["07  结果与两轮诊断",
+             "08  三个把变量控制住的做法",
+             "09  五次让结论作废的错误",
+             "10  操作层面的错误与规则",
+             "11  局限与下一步"]
     for column, items in ((Inches(1.35), left), (Inches(7.0), right)):
         y = Inches(4.78)
         for item in items:
@@ -395,37 +394,45 @@ def build_bc_win(prs):
 
 
 def build_bc_negative(prs):
-    """B3：负结果清单。"""
+    """B4：五个负结果 —— 换到 15% 训练集上重跑。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 04", "五个负结果：都试过，都不显著",
-           "把它们列齐比只报成功更重要 —— 否则下一个人会重跑一遍")
+    header(slide, "条码 · 05", "五个负结果：换到 15% 训练集上重跑，全都不显著",
+           "训练 979 张；MDE = 2.57 pt（Top-1）/ 4.08 pt（C128），"
+           "四个干预的效应都只有 0.2~0.9 pt")
 
-    col_w = [Inches(2.05), Inches(2.55), Inches(2.3),
-             Inches(1.55), Inches(3.1)]
+    col_w = [Inches(1.85), Inches(2.55), Inches(1.55),
+             Inches(2.05), Inches(2.05), Inches(2.04)]
     table(slide, [
-        ["尝试", "做法", "结果", "配对检验", "判定"],
-        ["Focal Loss", "γ=2，替换 CE", "99.08%", "−0.31 pt", "不显著"],
-        ["Label Smoothing", "ε=0.1", "99.18 ± 0.37", "t = 1.52", "不显著"],
-        ["降主干步长 S16", "末端 7×7 → 14×14", "99.49 ± 0.18", "t = 0.63",
-         "不显著（MACs 1.62×）"],
-        ["加轮数 10 → 20", "同配方翻倍", "99.39%（同 10 轮）", "—",
-         "无效，第 20 轮 val 崩到 94.48%"],
-        ["只改长宽比", "128×384 等", "≈ 0 提升", "—", "无效"],
-    ], MARGIN, Inches(1.78), col_w, fs=11,
-        row_h=Inches(0.52))
+        ["尝试", "做法", "原划分", "15% 训练集", "配对差（15%）", "判定"],
+        ["224 基线", "MobileNetV3-Large @224", "99.39", "97.00 ± 0.68", "—",
+         "参照"],
+        ["Focal Loss", "γ=2，替换 CE", "99.08", "95.84 ± 2.60",
+         "−0.77（t=−0.45）", "不显著"],
+        ["Label Smoothing", "ε=0.1", "99.18 ± 0.37", "97.19 ± 0.38",
+         "+0.20（t=0.32）", "不显著"],
+        ["降主干步长 S16", "末端 7×7 → 14×14", "99.49 ± 0.18",
+         "96.09 ± 1.17", "−0.90（t=−0.85）", "不显著"],
+        ["只改长宽比", "128×384 等面积变形", "≈ 0 提升", "95.56 ± 0.45",
+         "−0.64（t=−2.75）", "不显著"],
+        ["加轮数 10 → 20", "同配方翻倍", "99.39（同 10 轮）", "未重跑", "—",
+         "无效：第 20 轮 val 崩到 94.48%"],
+    ], MARGIN, Inches(1.76), col_w, fs=10.5,
+        align_right_cols=(2, 3), row_h=Inches(0.45))
 
-    tb(slide, MARGIN, Inches(5.25), Inches(6.1), Inches(0.3),
+    tb(slide, MARGIN, Inches(4.96), Inches(6.1), Inches(0.3),
        "共同的原因", size=13, bold=True, color=BLUE)
-    bullets(slide, MARGIN, Inches(5.6), Inches(6.0), [
-        ("基线已经接近上限：", "错误只剩 6 个，任何改动的空间都很窄"),
-        ("效应量小于 MDE：", "原划分 MDE ≈ 0.5 pt，这些改动只有 0.1~0.3 pt"),
+    bullets(slide, MARGIN, Inches(5.30), Inches(6.0), [
+        ("效应量小于 MDE：", "15% 训练集上 MDE = 2.57 pt，四个干预只有 "
+         "0.2~0.9 pt，功效不够 —— 只能判「没检出」"),
+        ("符号都不稳：", "S16 从 +0.10 变 −0.90、LS 从 −0.21 变 +0.20，"
+         "噪声量级下方向由划分决定"),
     ], size=12)
 
-    callout(slide, Inches(7.1), Inches(5.25), Inches(5.6), Inches(1.55),
-            "教训：当基线错误数已是个位数量级时，"
-            "「再调一个损失函数」几乎不可能被检出 —— "
-            "要么换更大的训练集，要么换问题（见后文一维剖面）。",
-            fs=12, fill=RGBColor(0xEA, 0xF1, 0xF8), edge=BLUE)
+    callout(slide, Inches(7.1), Inches(4.96), Inches(5.6), Inches(1.55),
+            "所以 S16 的结论要从「无影响」改写成「不确定有收益，且可能在"
+            "少数类上有代价」（C128 召回 −4.30 pt，已接近 MDE 4.08）。"
+            "把负结果列齐的价值只有一个：下一个人不必再重跑一遍。",
+            fs=11.5, fill=RGBColor(0xFD, 0xF3, 0xE6), edge=ORANGE)
     finish_slide(slide, BC_NOTE)
     return slide
 
@@ -433,7 +440,7 @@ def build_bc_negative(prs):
 def build_bc_split(prs):
     """B4：划分反转复核。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 05", "把训练集和测试集对调，结论还成立吗",
+    header(slide, "条码 · 04", "把训练集和测试集对调，结论还成立吗",
            "训练 979 / 测试 4569 —— 用最小训练集换最大检验强度")
 
     col_w = [Inches(1.45), Inches(1.35), Inches(1.35),
@@ -461,44 +468,8 @@ def build_bc_split(prs):
     callout(slide, Inches(7.1), Inches(4.30), Inches(5.6), Inches(1.55),
             "小训练集让功效崩掉：seed 间方差从 ±0.10 涨到 ±1.03。"
             "所以「不显著」只能读作「没检出」，不能读作「证明无效」。"
-            "—— 这句话在下一部分的 1D 实验里会反噬我们自己。",
+            "—— 这句话在后面的 1D 实验里会反噬我们自己。",
             fs=12, fill=RGBColor(0xFD, 0xF3, 0xE6), edge=ORANGE)
-    finish_slide(slide, BC_NOTE)
-    return slide
-
-
-def build_bc_mirror(prs):
-    """B5：三个负结果的镜像复核。"""
-    slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 06", "镜像复核：负结果复现了，但方向不稳",
-           "把三个「无效」干预在 swap 划分上按同样协议重跑")
-
-    col_w = [Inches(2.35), Inches(0.9), Inches(1.5),
-             Inches(1.9), Inches(1.9), Inches(1.2),
-             Inches(1.5)]
-    table(slide, [
-        ["干预", "seed", "Top-1", "配对 dTop-1", "配对 dC128", "t", "判定"],
-        ["Focal vs 224", "2", "95.84", "−0.77", "+1.19", "−0.45", "不显著"],
-        ["Label Smoothing", "3", "97.19", "+0.20", "−0.82", "0.32", "不显著"],
-        ["S16", "3", "96.09", "−0.90", "−4.30", "−0.85", "不显著"],
-        ["128×384 几何", "3", "95.56", "−0.64", "−0.35", "−2.75", "不显著"],
-    ], MARGIN, Inches(1.80), col_w, fs=11.5,
-        align_right_cols=(1, 2, 3, 4, 5), row_h=Inches(0.46))
-
-    tb(slide, MARGIN, Inches(4.14), Inches(6.0), Inches(0.3),
-       "两个发现", size=13, bold=True, color=BLUE)
-    bullets(slide, MARGIN, Inches(4.49), Inches(6.0), [
-        ("「都不显著」复现了：", "与原划分一致，没有任何一项值得采纳"),
-        ("但点估计方向不稳：", "S16 从 +0.10 变 −0.90、LS 从 −0.21 变 +0.20，符号都翻了"),
-    ], size=12)
-
-    tb(slide, Inches(7.1), Inches(4.14), Inches(5.6), Inches(0.3),
-       "所以 S16 的结论要改写", size=13, bold=True, color=BLUE)
-    callout(slide, Inches(7.1), Inches(4.49), Inches(5.6), Inches(1.55),
-            "从「无影响」改成「不确定有收益，且可能在少数类上有代价」"
-            "（C128 召回 −4.30 pt，已接近 MDE 4.08）。"
-            "效应量在噪声量级时，方向由划分决定 —— 不能拿某一次是正的当采纳理由。",
-            fs=12, fill=RGBColor(0xEA, 0xF1, 0xF8), edge=BLUE)
     finish_slide(slide, BC_NOTE)
     return slide
 
@@ -506,7 +477,7 @@ def build_bc_mirror(prs):
 def build_bc_1d_design(prs):
     """B6：一维剖面的动机与设计。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 07", "换问题：2D 布局到底贡献了多少精度",
+    header(slide, "条码 · 06", "换问题：2D 布局到底贡献了多少精度",
            "把条码图压成一维剖面 (2, L)，只保留「横向条宽」这一种信息")
 
     tb(slide, MARGIN, Inches(1.72), Inches(5.9), Inches(0.3),
@@ -548,7 +519,7 @@ def build_bc_1d_design(prs):
 def build_bc_1d_result(prs):
     """B7：1D 结果与两轮诊断。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 08", "1D 只到 93.06%，但差距不在信息上",
+    header(slide, "条码 · 07", "1D 只到 93.06%，但差距不在信息上",
            "两轮诊断：固定分类器看表示，固定输入看训练")
 
     chart_data = CategoryChartData()
@@ -595,7 +566,7 @@ def build_bc_1d_result(prs):
 def build_bc_lessons(prs):
     """B8：方法学教训。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 09", "三个把变量控制住的做法",
+    header(slide, "条码 · 08", "三个把变量控制住的做法",
            "三条都是本轮实验里实际采用的做法")
 
     items = [
@@ -644,7 +615,7 @@ def build_bc_lessons(prs):
 def build_part2_next(prs):
     """条码部分的收尾页：只讲这部分的局限与下一步。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 12", "局限与下一步", "都只针对本部分的实验")
+    header(slide, "条码 · 11", "局限与下一步", "都只针对本部分的实验")
 
     tb(slide, MARGIN, Inches(1.78), Inches(6.0), Inches(0.3),
        "局限", size=13, bold=True, color=BLUE)
@@ -770,7 +741,7 @@ def build_p1_process_b(prs):
 def build_bc_process_a(prs):
     """条码 09：让结论作废的四次错误（正确性 bug + 统计纪律）。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 10", "五次让结论作废的错误",
+    header(slide, "条码 · 09", "五次让结论作废的错误",
            "共同点：不是跑不起来，而是跑起来了但数字是假的")
 
     col_w = [Inches(2.25), Inches(3.05), Inches(4.05), Inches(2.7)]
@@ -800,7 +771,7 @@ def build_bc_process_a(prs):
 def build_bc_process_b(prs):
     """条码 10：操作层面的错误与后来定下的规则。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 11", "操作层面的错误与现在的规则",
+    header(slide, "条码 · 10", "操作层面的错误与现在的规则",
            "前三条来自 docs/排查问题清单.md 的 E 段，后两条是这一轮新增的")
 
     col_w = [Inches(4.0), Inches(4.3), Inches(3.7)]
@@ -918,9 +889,8 @@ def main():
     build_bc_setup(prs)
     build_bc_samples(prs)
     build_bc_win(prs)
-    build_bc_negative(prs)
     build_bc_split(prs)
-    build_bc_mirror(prs)
+    build_bc_negative(prs)
     build_bc_1d_design(prs)
     build_bc_1d_result(prs)
     build_bc_lessons(prs)
