@@ -879,6 +879,52 @@ def renumber_slide_parts(prs):
     prs.part.rename_slide_parts(r_ids)
 
 
+def build_four_week_review(prs):
+    """收尾：四周考核清单逐周对照（第零周按用户要求不列）。"""
+    slide = prs.slides.add_slide(blank_layout(prs))
+    header(slide, "四周回顾", "对照考核清单：四周计划做到了哪些、还差哪些",
+           "清单来自《四周考核内容.md》；状态按仓库与文档里的实际产物判定，"
+           "不按计划口径")
+
+    col_w = [Inches(0.95), Inches(3.75), Inches(5.35), Inches(1.95)]
+    table(slide, [
+        ["周次", "考核清单要求", "仓库里的实际产物", "状态"],
+        ["第 1 周", "Mini-ImageNet：ResNet-50 / MobileNetV3 / ConvNeXt 对比 +"
+         " LS 消融 + 参数量 / FLOPs / 延迟",
+         "docs/基准报告.md：三模型各跑一次、CE vs LS(0.1)、延迟实测",
+         "完成"],
+        ["第 2 周", "检测：Faster R-CNN vs YOLO 系 + Mosaic 消融 + mAP / "
+         "AP_S·M·L + PR 曲线 + 5 个 Bad Case",
+         "只做了 YOLO11→26 分割头源码精读与 fuse 实测；检测训练 0 run",
+         "未做"],
+        ["第 3 周", "分割：UNet vs SegFormer / YOLOv8n-seg + CE vs BCE+Dice + "
+         "mIoU / Dice / 边界误差",
+         "分割头代码级对比（精读笔记 §11）+ 条码码制分类 21 个 run",
+         "部分完成"],
+        ["第 4 周", "增强：Zero-DCE vs NAFNet + L1 vs L1+感知 + "
+         "PSNR / SSIM / LPIPS + 720P 耗时与显存",
+         "1D 剖面实验与盈亏平衡；增强训练 0 run", "未做"],
+    ], MARGIN, Inches(1.72), col_w, fs=10.5, row_h=Inches(0.52))
+
+    tb(slide, MARGIN, Inches(4.46), Inches(6.1), Inches(0.3),
+       "还没做到的（按考核清单逐条）", size=13, bold=True, color=ORANGE)
+    gap_w = [Inches(0.95), Inches(8.0), Inches(3.14)]
+    table(slide, [
+        ["周次", "考核清单要求", "现状"],
+        ["第 2 周", "mAP@0.5、mAP@0.5:0.95、AP_S / AP_M / AP_L、PR 曲线、"
+         "5 个漏检/误检 Bad Case、Mosaic 开关消融", "0 项有数据"],
+        ["第 3 周", "mIoU、Dice 系数、Pixel Accuracy、Boundary IoU、"
+         "CE vs BCE+Dice 对比", "0 项有数据"],
+        ["第 4 周", "Zero-DCE vs NAFNet、PSNR / SSIM / LPIPS、"
+         "L1 vs L1+感知、720P/1080P 耗时与显存", "0 项有数据"],
+    ], MARGIN, Inches(4.78), gap_w, fs=10.5, row_h=Inches(0.52),
+        align_right_cols=())
+
+    finish_slide(slide, "清单来源：D:/Users/admin/Desktop/文档周报/"
+                        "四周考核内容.md · 状态依据：docs/ 与 .tmp_tests/")
+    return slide
+
+
 def main():
     if not BASE_PPTX.is_file():
         print("找不到底座 deck: %s" % BASE_PPTX)
@@ -906,6 +952,7 @@ def main():
     build_bc_breakeven(prs)
     build_bc_lessons(prs)
     build_bc_process_a(prs)
+    build_four_week_review(prs)
 
     total = len(prs.slides)
     renumber_slide_parts(prs)   # 先重排部件名，再刷页码
