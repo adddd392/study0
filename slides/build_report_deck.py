@@ -261,8 +261,9 @@ def build_part2_cover(prs):
             "06  一维剖面：设计与预注册"]
     right = ["07  一维剖面：数据长什么样",
              "08  结果与两轮诊断",
-             "09  三个把变量控制住的做法",
-             "10  五次让结论作废的错误"]
+             "09  盈亏平衡：多准多快才划算",
+             "10  三个把变量控制住的做法",
+             "11  五次让结论作废的错误"]
     for column, items in ((Inches(1.35), left), (Inches(7.0), right)):
         y = Inches(4.78)
         for item in items:
@@ -592,10 +593,53 @@ def build_bc_1d_result(prs):
     return slide
 
 
+def build_bc_breakeven(prs):
+    """B9：盈亏平衡 —— 分类器要多准、多快才划算。"""
+    slide = prs.slides.add_slide(blank_layout(prs))
+    header(slide, "条码 · 09", "盈亏平衡：分类器要多准、多快才划算",
+           "把它放进解码流水线算总账 —— 9_23 直接可解码子集 n=1785，"
+           "三个耗时都是实测值")
+
+    pic_w = Inches(7.55)
+    pic_h = int(pic_w * 975 / 1590)      # 与配图实际像素比一致
+    slide.shapes.add_picture(str(FIG_DIR / "breakeven_direct.png"), MARGIN,
+                             Inches(1.72), pic_w, pic_h)
+
+    column_x = MARGIN + pic_w + Inches(0.28)
+    column_w = W - MARGIN - column_x
+
+    tb(slide, column_x, Inches(1.72), column_w, Inches(0.3),
+       "口径：方案B 兜底", size=13, bold=True, color=BLUE)
+    bullets(slide, column_x, Inches(2.04), column_w - Inches(0.10), [
+        ("三条实测耗时：", "3 码制单次全量 144 µs、限定正确码制 110 µs、"
+         "故意用错码制 205 µs"),
+        ("兜底路径：", "先按分类器给的码制解，失败再用 3 码制全量重试 —— "
+         "覆盖率恒等于基准"),
+        ("总时延：", "C + A×110 + (1−A)×205，与基准 144 µs 相等即平衡"),
+    ], size=11.5)
+
+    tb(slide, column_x, Inches(4.04), column_w, Inches(0.3),
+       "曲线读数：C 越大，要求越准", size=13, bold=True, color=ORANGE)
+    bullets(slide, column_x, Inches(4.36), column_w - Inches(0.10), [
+        ("C = 0：", "需 A ≥ 85.7%，这是基准路径本身决定的下限"),
+        ("C = 10 / 25 / 34.3 µs：", "需 A ≥ 89.9% / 96.1% / 100%，"
+         "过 34.3 µs 整片无解"),
+    ], size=11.5, dot=ORANGE)
+
+    callout(slide, column_x, Inches(5.62), column_w, Inches(1.02),
+            "本项目对照：224 的 97.00% 只在 C ≤ 27.1 µs 时划算；"
+            "1D 最好的 95.34% 要求 C ≤ 23.1 µs。两套评测集不同，只作量级参考。",
+            fs=11)
+
+    finish_slide(slide, "数据来源：iotc2010/c128_c39/skew_align/skew_align/"
+                        "_breakeven_direct.py 与 out/breakeven_direct.csv")
+    return slide
+
+
 def build_bc_lessons(prs):
     """B8：方法学教训。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 09", "三个把变量控制住的做法",
+    header(slide, "条码 · 10", "三个把变量控制住的做法",
            "三条都是本轮实验里实际采用的做法")
 
     items = [
@@ -738,7 +782,7 @@ def build_p1_process_b(prs):
 def build_bc_process_a(prs):
     """条码 09：让结论作废的四次错误（正确性 bug + 统计纪律）。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 10", "五次让结论作废的错误",
+    header(slide, "条码 · 11", "五次让结论作废的错误",
            "共同点：不是跑不起来，而是跑起来了但数字是假的")
 
     col_w = [Inches(2.25), Inches(3.05), Inches(4.05), Inches(2.7)]
@@ -859,6 +903,7 @@ def main():
     build_bc_1d_design(prs)
     build_bc_1d_profile(prs)
     build_bc_1d_result(prs)
+    build_bc_breakeven(prs)
     build_bc_lessons(prs)
     build_bc_process_a(prs)
 
