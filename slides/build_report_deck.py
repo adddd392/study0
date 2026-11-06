@@ -633,45 +633,53 @@ def build_part2_next(prs):
     return slide
 
 
+# ---------------------------------------------------------------- 分割头过程页
 def build_p1_process_a(prs):
-    """分割头 过程①：把笔记里 23 处更正里代表性的 7 条列出来。"""
+    """分割头 过程①：三轮自检里错得最实的 8 条。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "过程 ①", "23 处更正：错在哪儿、怎么改的",
-           "来自 9 组自测题 —— 先自己写答案，再逐条对源码")
+    header(slide, "过程 ①", "分割头自检：三轮批改错在哪儿",
+           "第一轮 2.0 / 5 · 26-seg 预习 4 / 10 · 第二轮 6 / 12；"
+           "答不出就写「不会」，编答案比留空更糟")
 
-    col_w = [Inches(0.95), Inches(3.05), Inches(4.75), Inches(2.6)]
+    col_w = [Inches(1.52), Inches(3.05), Inches(4.72), Inches(2.40)]
     table(slide, [
-        ["题号", "我原来的答案", "更正后", "依据"],
-        ["Q1.1", "1280 输入写成 160² + 60² + 20²",
-         "160² + 80² + 40² = 33,600", "stride 8/16/32"],
-        ["Q1.2", "84 里的 4 个通道当成 xyxy",
-         "是 ltrb 边距；64 = 4 边 × 16 bin 的 DFL 分布", "DFL 解码"],
-        ["Q1.3", "漏了 decode；sigmoid 写成 softmax",
-         "先 dist2bbox 解码、逐类 sigmoid、两段 topk 分开", "head.py 推理段"],
-        ["Q1.4", "值是 None，理由是 YAML 开关",
-         "值是 False；YAML 只 deepcopy 出双支", "head.py:141-143"],
-        ["Q2.3", "C3k2「变深」了", "是 repeats 2→1：2,234,368 → 1,712,640",
-         "参数实测 −23%"],
-        ["Q4.2", "权重写成 0.1·o2o + 0.9·o2m",
-         "写反了：o2m 0.8→0.1，o2o 0.2→0.9", "trainer.py:643"],
-        ["Q4.3", "日志 loss 就是总损失", "日志只来自 o2o，反传是加权和",
-         "loss.py:1305"],
-        ["Q5.3", "两版延迟都按 o2m 前向比",
-         "26 测的是 nms=False 的 o2o 图", "论文脚注口径"],
-    ], MARGIN, Inches(1.74), col_w, fs=10.5,
+        ["题 · 得分", "我原来的答案", "正解", "源码锚点"],
+        ["Q1 · 0/5", "空",
+         "mask = σ(Σ c_i·P_i)：一个实例一次 32 维点积", "head.py:341-346"],
+        ["Q2 · 2.5/5", "proto 只在预测框内匹配 GT",
+         "proto 是全图的，裁框发生在损失/后处理；兜底是把 proto 上采样到 GT 尺寸",
+         "loss.py:546"],
+        ["Q5 · 0/5", "空",
+         "NMS 不丢系数：拼成 (N,38)，后处理取 [:,6:]；先 NMS 再合成",
+         "nms.py:119"],
+        ["预习① · 2.5/5", "nearest 是为了「硬边界」",
+         "硬边界是 >0 二值化的事；nearest + 常数 scale_factor 是为动态 shape 导出",
+         "block.py:2031-2032"],
+        ["预习② · 1.5/5", "sem_masks 与分类得分相乘",
+         "乘的是类别 id，得到类别图（0 = 背景）；GT 里没有得分",
+         "augment.py:2457-2474"],
+        ["二轮① · 1.5/2", "给了 MACs 和形状，没答点积次数",
+         "12×160×160 = 307,200 次点积；proto 生成 1 次、参与 12 次",
+         "口算 + 实测"],
+        ["二轮④ · 0.5/2", "sem_masks 取「分类分数高」的",
+         "GT 里没有分数；overlap_mask 时面积小者胜，与 gt_mask 取法一致",
+         "utils.py:622-643"],
+        ["二轮③ · 1/2", "(o2o + o2m) × (seg + cls)",
+         "只有 seg（mask）项能训到 proto，cls loss 与 proto 无关",
+         "head.py:448-450"],
+    ], MARGIN, Inches(1.86), col_w, fs=10.5,
         align_right_cols=(0,), row_h=Inches(0.40))
 
-    callout(slide, MARGIN, Inches(5.60), CONTENT_W, Inches(0.95),
-            "23 处更正集中在两类：① 源码细节（形状、属性、权重顺序）；"
-            "② 比较口径（跟谁比、怎么测、量纲是否一致）。两类都不是「看不懂」，"
-            "而是「看漏了 + 想当然」。", fs=12.5)
+    callout(slide, MARGIN, Inches(5.86), CONTENT_W, Inches(0.80),
+            "错的地方有个共同点：把「在哪发生」记混了 —— 裁框是损失侧的事、"
+            "二值化是后处理的事、静态化是导出的事。", fs=12.5)
     finish_slide(slide, "ultralytics 8.4.184 · torch 2.4.1+cpu · "
-                        "出处：YOLO26-笔记模块与自测题库.md")
+                        "出处：YOLO11→YOLO26-代码精读笔记.md §11")
     return slide
 
 
 def build_p1_process_b(prs):
-    """分割头 过程②：错误能被找回来的方法，以及一条完整推理链。"""
+    """分割头 过程②：错误能被找回来的方法，以及一条 proto 对齐链。"""
     slide = prs.slides.add_slide(blank_layout(prs))
     header(slide, "过程 ②", "把错找回来的三步",
            "自测 → 落到行号 → 实测对账")
@@ -679,31 +687,33 @@ def build_p1_process_b(prs):
     tb(slide, MARGIN, Inches(1.74), Inches(6.0), Inches(0.3),
        "做法", size=13, bold=True, color=BLUE)
     bullets(slide, MARGIN, Inches(2.10), Inches(5.9), [
-        ("先自测：", "9 组题按章节出，答案是自己先写的，所以错在哪一步可追"),
-        ("每条更正落到文件:行号：", "head.py:141-143、loss.py:1305、"
-         "trainer.py:643 —— 落不到行号的就不算更正"),
-        ("实测对账：", "参数量、延迟、MACs 与源码推算必须一致，"
-         "脚本是 bench_seg_heads.py / bench_seg_lat.py"),
+        ("先自测：", "答不出就写「不会」—— 编答案比留空更糟，"
+         "错的答案会变成错误的记忆"),
+        ("每条更正落到行号：", "head.py:341-346、loss.py:546、nms.py:119 —— "
+         "落不到行号的就不算更正"),
+        ("实测对账：", "参数量 160,224（cv4）与 92,544（proto）、形状 "
+         "(1,32,160,160)、ONNX 节点 476 → 560，都要与源码推算一致"),
     ], size=12)
 
     tb(slide, Inches(7.1), Inches(1.74), Inches(5.6), Inches(0.3),
        "一条完整的链", size=13, bold=True, color=ORANGE)
-    callout(slide, Inches(7.1), Inches(2.10), Inches(5.6), Inches(2.05),
-            "IoU^6 为什么不是「加大分类权重」：\n"
-            "0.5^6 = 0.0156，0.9^6 = 0.531，相差 34 倍；\n"
-            "同样条件下线性只有 1.8 倍。\n"
-            "→ 它放大的是定位质量差异，而 cls^0.5 反而压低分类分。",
-            fs=12)
+    callout(slide, Inches(7.1), Inches(2.10), Inches(5.6), Inches(2.15),
+            "为什么 proto 是 160×160：\n"
+            "GT 掩码在 Format.apply_instances 里按 mask_ratio = 4 下采样到 "
+            "160×160（augment.py:2459）；\n"
+            "proto 因为 ConvTranspose2d 2× 也正好是 160 —— 两者默认就一致；\n"
+            "F.interpolate 只是兜底，且方向是把 proto 上采样到 GT 尺寸。",
+            fs=11.5)
 
     tb(slide, MARGIN, Inches(4.55), Inches(6.0), Inches(0.3),
        "所以「更正」不止是改结论", size=13, bold=True, color=BLUE)
     bullets(slide, MARGIN, Inches(4.91), Inches(5.9), [
         ("改的是判据：", "从「看起来合理」改成「能对上行号与实测量」"),
-        ("改的是口径：", "延迟要写清是哪张图、含不含 NMS、batch 与线程数"),
+        ("改的是顺序：", "先 NMS 再合成 mask；8400 行全合成会慢 20 倍以上"),
         ("留下的是方法：", "下一轮换模型或换任务，这套对账流程可以照搬"),
     ], size=12)
     finish_slide(slide, "ultralytics 8.4.184 · torch 2.4.1+cpu · "
-                        "出处：YOLO26-笔记模块与自测题库.md")
+                        "出处：YOLO11→YOLO26-代码精读笔记.md §11")
     return slide
 
 
