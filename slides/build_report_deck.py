@@ -1,4 +1,4 @@
-"""构建第三周汇报 deck：YOLO26 分割头学习对比 + 条码码制分类实验。
+"""构建第四周汇报 deck：YOLO26 分割头学习对比 + 条码码制分类实验。
 
 设计要点
 --------
@@ -32,7 +32,7 @@ BASE_PPTX = BASE_DIR / "YOLO11-vs-YOLO26-分割头对比.pptx"
 FIGS = BASE_DIR / "note-figs"
 
 OUT_DIR = Path(__file__).resolve().parent
-OUT_PPTX = OUT_DIR / "第三周汇报.pptx"
+OUT_PPTX = OUT_DIR / "第四周汇报.pptx"
 FIG_DIR = OUT_DIR / "figs"   # 本仓库生成的配图
 
 # 与底座 deck 完全相同的调色板，保证两部分的视觉是同一套
@@ -259,11 +259,10 @@ def build_part2_cover(prs):
             "04  划分反转复核：方向能复现吗",
             "05  五个负结果：换到 15% 训练集重跑",
             "06  一维剖面：设计与预注册"]
-    right = ["07  结果与两轮诊断",
-             "08  三个把变量控制住的做法",
-             "09  五次让结论作废的错误",
-             "10  操作层面的错误与规则",
-             "11  局限与下一步"]
+    right = ["07  一维剖面：数据长什么样",
+             "08  结果与两轮诊断",
+             "09  三个把变量控制住的做法",
+             "10  五次让结论作废的错误"]
     for column, items in ((Inches(1.35), left), (Inches(7.0), right)):
         y = Inches(4.78)
         for item in items:
@@ -397,38 +396,36 @@ def build_bc_negative(prs):
     """B4：五个负结果 —— 换到 15% 训练集上重跑。"""
     slide = prs.slides.add_slide(blank_layout(prs))
     header(slide, "条码 · 05", "五个负结果：换到 15% 训练集上重跑，全都不显著",
-           "配对差 = 同 seed 与 224 基线相减后取均值；训练 979 张，"
-           "MDE = 2.57 / 4.08 pt（Top-1 / C128）")
+           "配对差 = 同 seed 与基线相减后取均值（几何组基线 128，其余 224）；"
+           "训练 979 张，MDE = 2.57 / 4.08 pt（Top-1 / C128）")
 
     col_w = [Inches(1.85), Inches(2.55), Inches(1.55),
              Inches(2.05), Inches(2.05), Inches(2.04)]
     table(slide, [
-        ["尝试", "做法", "原划分", "15% 训练集", "配对差 vs 224", "判定"],
+        ["尝试", "做法", "原划分", "15% 训练集", "配对差 vs 基线", "判定"],
         ["224 基线", "MobileNetV3-Large @224", "99.39", "97.00 ± 0.68", "—",
          "参照"],
         ["Focal Loss", "γ=2，替换 CE", "99.08", "95.84 ± 2.60",
-         "−0.77（t=−0.45）", "不显著"],
+         "−0.77 vs 224（t=−0.45）", "不显著"],
         ["Label Smoothing", "ε=0.1", "99.18 ± 0.37", "97.19 ± 0.38",
-         "+0.20（t=0.32）", "不显著"],
+         "+0.20 vs 224（t=0.32）", "不显著"],
         ["降主干步长 S16", "末端 7×7 → 14×14", "99.49 ± 0.18",
-         "96.09 ± 1.17", "−0.90（t=−0.85）", "不显著"],
+         "96.09 ± 1.17", "−0.90 vs 224（t=−0.85）", "不显著"],
         ["只改长宽比", "128×384 等面积变形", "≈ 0 提升", "95.56 ± 0.45",
-         "−0.64（t=−2.75）", "不显著"],
-        ["加轮数 10 → 20", "同配方翻倍", "99.39（同 10 轮）", "未重跑", "—",
-         "无效：第 20 轮 val 崩到 94.48%"],
+         "−0.64 vs 128（t=−2.75）", "不显著"],
     ], MARGIN, Inches(1.76), col_w, fs=10.5,
         align_right_cols=(2, 3), row_h=Inches(0.45))
 
-    tb(slide, MARGIN, Inches(4.96), Inches(6.1), Inches(0.3),
+    tb(slide, MARGIN, Inches(4.58), Inches(6.1), Inches(0.3),
        "共同的原因", size=13, bold=True, color=BLUE)
-    bullets(slide, MARGIN, Inches(5.30), Inches(6.0), [
+    bullets(slide, MARGIN, Inches(4.92), Inches(6.0), [
         ("效应量小于 MDE：", "15% 训练集上 MDE = 2.57 pt，四个干预只有 "
          "0.2~0.9 pt，功效不够 —— 只能判「没检出」"),
         ("符号都不稳：", "S16 从 +0.10 变 −0.90、LS 从 −0.21 变 +0.20，"
          "噪声量级下方向由划分决定"),
     ], size=12)
 
-    callout(slide, Inches(7.1), Inches(4.96), Inches(5.6), Inches(1.55),
+    callout(slide, Inches(7.1), Inches(4.58), Inches(5.6), Inches(1.55),
             "所以 S16 的结论要从「无影响」改写成「不确定有收益，且可能在"
             "少数类上有代价」（C128 召回 −4.30 pt，已接近 MDE 4.08）。"
             "把负结果列齐的价值只有一个：下一个人不必再重跑一遍。",
@@ -516,10 +513,42 @@ def build_bc_1d_design(prs):
     return slide
 
 
+def build_bc_1d_profile(prs):
+    """B7：1D 数据长什么样（原图 → 列投影 → L=1024 / L=128）。"""
+    slide = prs.slides.add_slide(blank_layout(prs))
+    header(slide, "条码 · 07", "1D 的数据：把图压成一条曲线，放大看",
+           "每列取像素均值 = 列投影（条变峰）；同一张图重采样到 L=1024 与 "
+           "L=128，下面是真实样本")
+
+    pic_w = Inches(11.4)                 # 略窄于正文宽，居中，避开副标题
+    pic_h = int(pic_w * 1065 / 3627)     # 与配图实际像素比一致
+    slide.shapes.add_picture(str(FIG_DIR / "1d_profiles.png"),
+                             int((W - pic_w) / 2), Inches(1.72),
+                             pic_w, pic_h)
+
+    tb(slide, MARGIN, Inches(5.22), Inches(6.0), Inches(0.3),
+       "怎么压的", size=13, bold=True, color=BLUE)
+    bullets(slide, MARGIN, Inches(5.54), Inches(5.9), [
+        ("列投影：", "每列取像素均值，条变峰；口径由「98% 竖直 + 无倾斜」"
+         "两条实测规则定下来"),
+        ("长度固定：", "L=1024 / 128 两档，不逐样本标准化（会抹掉明暗对比）"),
+    ], size=11.5)
+
+    tb(slide, Inches(7.0), Inches(5.22), Inches(5.6), Inches(0.3),
+       "压到 128 之后还剩什么", size=13, bold=True, color=ORANGE)
+    bullets(slide, Inches(7.0), Inches(5.54), Inches(5.6), [
+        ("1024 有富余：", "C128 条宽 18 格、EAN13 28 格，条的边沿还完整"),
+        ("128 只剩 2~3 格：", "实测 93.06 → 94.14（+1.1）→ 加 wd 到 95.34"),
+    ], size=11.5, dot=ORANGE)
+
+    finish_slide(slide, BC_NOTE)
+    return slide
+
+
 def build_bc_1d_result(prs):
     """B7：1D 结果与两轮诊断。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 07", "1D 只到 93.06%，但差距不在信息上",
+    header(slide, "条码 · 08", "1D 只到 93.06%，但差距不在信息上",
            "两轮诊断：固定分类器看表示，固定输入看训练")
 
     chart_data = CategoryChartData()
@@ -566,7 +595,7 @@ def build_bc_1d_result(prs):
 def build_bc_lessons(prs):
     """B8：方法学教训。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 08", "三个把变量控制住的做法",
+    header(slide, "条码 · 09", "三个把变量控制住的做法",
            "三条都是本轮实验里实际采用的做法")
 
     items = [
@@ -612,38 +641,6 @@ def build_bc_lessons(prs):
     return slide
 
 
-def build_part2_next(prs):
-    """条码部分的收尾页：只讲这部分的局限与下一步。"""
-    slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 11", "局限与下一步", "都只针对本部分的实验")
-
-    tb(slide, MARGIN, Inches(1.78), Inches(6.0), Inches(0.3),
-       "局限", size=13, bold=True, color=BLUE)
-    bullets(slide, MARGIN, Inches(2.14), Inches(5.9), [
-        ("训练预算：", "10 轮；swap 划分下训练样本只有 979 张"),
-        ("选轮依据：", "验证集 979 张，按验证损失选最佳轮，自身有噪声"),
-        ("前端假设：", "条码竖直、无倾斜（200 张探针支持，不等于全部样本）"),
-        ("缺对照：", "未做 2D 长训练（30~60 轮）对照，所以 2D 上限没有直接证据"),
-    ], size=12)
-
-    tb(slide, Inches(7.1), Inches(1.78), Inches(5.6), Inches(0.3),
-       "下一步", size=13, bold=True, color=ORANGE)
-    bullets(slide, Inches(7.1), Inches(2.14), Inches(5.6), [
-        ("原始划分重跑 1D：", "用 4569 张训练，检验「差距来自 979 样本过拟」这个归因"),
-        ("1D 侧强增广：", "条宽抖动、保比例的随机裁剪、弹性形变"),
-        ("预训练权重灰度适配：", "从零训练只用 4569 张，这是最可能有增益的方向"),
-        ("多尺度增强：", "尺寸跨度 31~2024 px，固定缩放会同时牺牲小图与大图"),
-    ], size=12, dot=ORANGE)
-
-    callout(slide, MARGIN, Inches(5.55), CONTENT_W, Inches(0.85),
-            "本部分所有数字都能在 docs/ 与 .tmp_tests/ 里查到出处；"
-            "复现命令见 docs/一维剖面实验.md §10。", fs=12,
-            fill=RGBColor(0xEA, 0xF1, 0xF8), edge=BLUE)
-    finish_slide(slide, BC_NOTE)
-    return slide
-
-
-# ---------------------------------------------------------------- 分割头过程页
 def build_p1_process_a(prs):
     """分割头 过程①：每题一行 —— 原题、错在哪、要点。"""
     slide = prs.slides.add_slide(blank_layout(prs))
@@ -741,7 +738,7 @@ def build_p1_process_b(prs):
 def build_bc_process_a(prs):
     """条码 09：让结论作废的四次错误（正确性 bug + 统计纪律）。"""
     slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 09", "五次让结论作废的错误",
+    header(slide, "条码 · 10", "五次让结论作废的错误",
            "共同点：不是跑不起来，而是跑起来了但数字是假的")
 
     col_w = [Inches(2.25), Inches(3.05), Inches(4.05), Inches(2.7)]
@@ -768,38 +765,6 @@ def build_bc_process_a(prs):
     return slide
 
 
-def build_bc_process_b(prs):
-    """条码 10：操作层面的错误与后来定下的规则。"""
-    slide = prs.slides.add_slide(blank_layout(prs))
-    header(slide, "条码 · 10", "操作层面的错误与现在的规则",
-           "前三条来自 docs/排查问题清单.md 的 E 段，后两条是这一轮新增的")
-
-    col_w = [Inches(4.0), Inches(4.3), Inches(3.7)]
-    table(slide, [
-        ["错误", "后果", "现在的规则"],
-        ["改文件时把函数体/文档字符串删掉",
-         "先后弄坏 _first_conv_path、main()、一处 save_model 行",
-         "改完立刻读回或跑测试"],
-        ["heredoc 里塞复杂 Python",
-         "引号被 PowerShell 吃掉，报错还指向错误的行号", "写文件，不用 heredoc"],
-        ["自检表整列相同没起疑",
-         "stride 列全是 1，累计倍数算成 2 倍", "整列相同先怀疑采集方式"],
-        ["模块名与标准库重名",
-         "src/profile.py 遮蔽标准库 profile，torch 导入崩溃，4 个 run 白跑",
-         "新模块先查是否重名"],
-        ["checkpoint 只写不删",
-         "单个 run 堆 10 个权重，测试目录一度 4.3 GB", "存新最佳时删旧文件"],
-    ], MARGIN, Inches(1.74), col_w, fs=10.5, row_h=Inches(0.60))
-
-    callout(slide, MARGIN, Inches(5.30), CONTENT_W, Inches(0.9),
-            "记下来的目的只有一个：同样的错误不在第二轮重复。"
-            "这份清单现在有 35 条，按「会让结论作废的 bug / 数据审查 / "
-            "工具链陷阱 / 统计纪律 / 我自己的操作错误」五类归档。", fs=12.5)
-    finish_slide(slide, BC_NOTE)
-    return slide
-
-
-# ---------------------------------------------------------------- 重排与页码
 def refresh_page_numbers(prs):
     """重排后页码会错位，按当前顺序重刷右下角的页码文本框。
 
@@ -892,11 +857,10 @@ def main():
     build_bc_split(prs)
     build_bc_negative(prs)
     build_bc_1d_design(prs)
+    build_bc_1d_profile(prs)
     build_bc_1d_result(prs)
     build_bc_lessons(prs)
     build_bc_process_a(prs)
-    build_bc_process_b(prs)
-    build_part2_next(prs)
 
     total = len(prs.slides)
     renumber_slide_parts(prs)   # 先重排部件名，再刷页码
